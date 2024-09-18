@@ -20,6 +20,7 @@
           "Microsoft.AspNetCore.Identity.EntityFrameworkCore": "8.0.8",
           "Microsoft.EntityFrameworkCore": "8.0.8",
           "Microsoft.EntityFrameworkCore.Tools": "8.0.8",
+          "Microsoft.VSSDK.BuildTools": "17.11.435",
           "Newtonsoft.Json": "13.0.3",
           "Npgsql.EntityFrameworkCore.PostgreSQL": "8.0.4",
           "Npgsql.Json.NET": "8.0.4",
@@ -690,6 +691,14 @@
           }
         }
       },
+      "Microsoft.VisualStudio.SDK.Analyzers/17.7.41": {},
+      "Microsoft.VSSDK.BuildTools/17.11.435": {
+        "dependencies": {
+          "Microsoft.VisualStudio.SDK.Analyzers": "17.7.41",
+          "Microsoft.VsSDK.CompatibilityAnalyzer": "17.11.435"
+        }
+      },
+      "Microsoft.VsSDK.CompatibilityAnalyzer/17.11.435": {},
       "Microsoft.Win32.Primitives/4.3.0": {
         "dependencies": {
           "Microsoft.NETCore.Platforms": "1.1.1",
@@ -1994,6 +2003,27 @@
       "sha512": "sha512-tTaBT8qjk3xINfESyOPE2rIellPvB7qpVqiWiyA/lACVvz+xOGiXhFUfohcx82NLbi5avzLW0lx+s6oAqQijfw==",
       "path": "microsoft.openapi/1.6.14",
       "hashPath": "microsoft.openapi.1.6.14.nupkg.sha512"
+    },
+    "Microsoft.VisualStudio.SDK.Analyzers/17.7.41": {
+      "type": "package",
+      "serviceable": true,
+      "sha512": "sha512-m+z9Li+FThM9BtsvsAEcZP4563DnmfxyCGItaMJHFmfSKMjuZ0t8g8yNdySGB69oKfS3vcA2vOReDHixdSSclQ==",
+      "path": "microsoft.visualstudio.sdk.analyzers/17.7.41",
+      "hashPath": "microsoft.visualstudio.sdk.analyzers.17.7.41.nupkg.sha512"
+    },
+    "Microsoft.VSSDK.BuildTools/17.11.435": {
+      "type": "package",
+      "serviceable": true,
+      "sha512": "sha512-u62AmujlY7r5so93Cz0KKkzHJvcJ6/UM9/DWRS/zqINz8nlRTB9svwndg1sedrboPggf5uGHoxD5rmj5O/Z0mA==",
+      "path": "microsoft.vssdk.buildtools/17.11.435",
+      "hashPath": "microsoft.vssdk.buildtools.17.11.435.nupkg.sha512"
+    },
+    "Microsoft.VsSDK.CompatibilityAnalyzer/17.11.435": {
+      "type": "package",
+      "serviceable": true,
+      "sha512": "sha512-EZbEMCAFA5rVXPHiIth4q9iKZqDbkBYqG/GRT8COUS5/0kSTQ/e1foz4K6xIpjdBsu2qeLg0hCPl/pmiMLhl1g==",
+      "path": "microsoft.vssdk.compatibilityanalyzer/17.11.435",
+      "hashPath": "microsoft.vssdk.compatibilityanalyzer.17.11.435.nupkg.sha512"
     },
     "Microsoft.Win32.Primitives/4.3.0": {
       "type": "package",

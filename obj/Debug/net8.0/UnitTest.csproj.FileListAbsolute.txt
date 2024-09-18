@@ -269,3 +269,4 @@ C:\SourceCode\UnitTest\obj\Debug\net8.0\refint\UnitTest.dll
 C:\SourceCode\UnitTest\obj\Debug\net8.0\UnitTest.pdb
 C:\SourceCode\UnitTest\obj\Debug\net8.0\UnitTest.genruntimeconfig.cache
 C:\SourceCode\UnitTest\obj\Debug\net8.0\ref\UnitTest.dll
+C:\SourceCode\UnitTest\obj\Debug\net8.0\UnitTest.sourcelink.json

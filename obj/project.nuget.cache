@@ -1,6 +1,6 @@
 {
   "version": 2,
-  "dgSpecHash": "jGCY0evRoYU=",
+  "dgSpecHash": "aNtTGD6IkJI=",
   "success": true,
   "projectFilePath": "C:\\SourceCode\\UnitTest\\UnitTest.csproj",
   "expectedPackageFiles": [
@@ -94,6 +94,9 @@
     "C:\\Users\\hgasp\\.nuget\\packages\\microsoft.openapi\\1.6.14\\microsoft.openapi.1.6.14.nupkg.sha512",
     "C:\\Users\\hgasp\\.nuget\\packages\\microsoft.testplatform.objectmodel\\17.11.1\\microsoft.testplatform.objectmodel.17.11.1.nupkg.sha512",
     "C:\\Users\\hgasp\\.nuget\\packages\\microsoft.testplatform.testhost\\17.11.1\\microsoft.testplatform.testhost.17.11.1.nupkg.sha512",
+    "C:\\Users\\hgasp\\.nuget\\packages\\microsoft.visualstudio.sdk.analyzers\\17.7.41\\microsoft.visualstudio.sdk.analyzers.17.7.41.nupkg.sha512",
+    "C:\\Users\\hgasp\\.nuget\\packages\\microsoft.vssdk.buildtools\\17.11.435\\microsoft.vssdk.buildtools.17.11.435.nupkg.sha512",
+    "C:\\Users\\hgasp\\.nuget\\packages\\microsoft.vssdk.compatibilityanalyzer\\17.11.435\\microsoft.vssdk.compatibilityanalyzer.17.11.435.nupkg.sha512",
     "C:\\Users\\hgasp\\.nuget\\packages\\microsoft.win32.primitives\\4.3.0\\microsoft.win32.primitives.4.3.0.nupkg.sha512",
     "C:\\Users\\hgasp\\.nuget\\packages\\microsoft.win32.registry\\4.3.0\\microsoft.win32.registry.4.3.0.nupkg.sha512",
     "C:\\Users\\hgasp\\.nuget\\packages\\microsoft.win32.systemevents\\4.5.0\\microsoft.win32.systemevents.4.5.0.nupkg.sha512",

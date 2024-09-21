@@ -1,7 +1,7 @@
 using FluentValidation.Results;
-using Klacks_api.Commands;
-using Klacks_api.Resources.Associations;
-using Klacks_api.Validation.Groups;
+using Klacks.Api.Commands;
+using Klacks.Api.Resources.Associations;
+using Klacks.Api.Validation.Groups;
 
 namespace UnitTest.Validation.Group;
 

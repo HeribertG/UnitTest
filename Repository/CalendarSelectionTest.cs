@@ -1,10 +1,10 @@
 using AutoMapper;
-using Klacks_api.Commands;
-using Klacks_api.Datas;
-using Klacks_api.Handlers.CalendarSelections;
-using Klacks_api.Queries;
-using Klacks_api.Repositories;
-using Klacks_api.Resources.Schedules;
+using Klacks.Api.Commands;
+using Klacks.Api.Datas;
+using Klacks.Api.Handlers.CalendarSelections;
+using Klacks.Api.Queries;
+using Klacks.Api.Repositories;
+using Klacks.Api.Resources.Schedules;
 using Microsoft.AspNetCore.Http;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;

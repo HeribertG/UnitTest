@@ -1,8 +1,8 @@
 
-using Klacks_api.Datas;
-using Klacks_api.Interfaces;
-using Klacks_api.Models.Authentification;
-using Klacks_api.Repositories;
+using Klacks.Api.Datas;
+using Klacks.Api.Interfaces;
+using Klacks.Api.Models.Authentification;
+using Klacks.Api.Repositories;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;

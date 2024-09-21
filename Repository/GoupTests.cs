@@ -1,13 +1,13 @@
 using AutoMapper;
-using Klacks_api.BasicScriptInterpreter;
-using Klacks_api.Commands;
-using Klacks_api.Datas;
-using Klacks_api.Handlers.Groups;
-using Klacks_api.Models.Associations;
-using Klacks_api.Models.Staffs;
-using Klacks_api.Repositories;
-using Klacks_api.Resources.Associations;
-using Klacks_api.Resources.Filter;
+using Klacks.Api.BasicScriptInterpreter;
+using Klacks.Api.Commands;
+using Klacks.Api.Datas;
+using Klacks.Api.Handlers.Groups;
+using Klacks.Api.Models.Associations;
+using Klacks.Api.Models.Staffs;
+using Klacks.Api.Repositories;
+using Klacks.Api.Resources.Associations;
+using Klacks.Api.Resources.Filter;
 using Microsoft.AspNetCore.Http;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
@@ -78,7 +78,7 @@ internal class GoupTests
     filter.Male = true;
     filter.Female = false;
     filter.LegalEntity = false;
-    var handler = new Klacks_api.Handlers.Clients.GetTruncatedListQueryHandler(clientRepository);
+    var handler = new Klacks.Api.Handlers.Clients.GetTruncatedListQueryHandler(clientRepository, _mapper);
 
     var group = new GroupResource();
     group.Name = $"FakeName{index}";
@@ -88,7 +88,7 @@ internal class GoupTests
     foreach (var id in idNumberList)
     {
       filter.SearchString = id.ToString();
-      var command = new Klacks_api.Queries.Clients.GetTruncatedListQuery(filter);
+      var command = new Klacks.Api.Queries.Clients.GetTruncatedListQuery(filter);
       var result = await handler.Handle(command, default);
       if (result != null && result.Clients != null)
       {

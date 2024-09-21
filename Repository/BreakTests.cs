@@ -1,11 +1,11 @@
 using AutoMapper;
-using Klacks_api.BasicScriptInterpreter;
-using Klacks_api.Datas;
-using Klacks_api.Handlers.Breaks;
-using Klacks_api.Models.Associations;
-using Klacks_api.Models.Schedules;
-using Klacks_api.Models.Staffs;
-using Klacks_api.Repositories;
+using Klacks.Api.BasicScriptInterpreter;
+using Klacks.Api.Datas;
+using Klacks.Api.Handlers.Breaks;
+using Klacks.Api.Models.Associations;
+using Klacks.Api.Models.Schedules;
+using Klacks.Api.Models.Staffs;
+using Klacks.Api.Repositories;
 using MediatR;
 using Microsoft.AspNetCore.Http;
 using Microsoft.EntityFrameworkCore;
@@ -39,7 +39,7 @@ internal class BreakTests
 
     DataSeed(clients, absence, breaks);
     var repository = new ClientRepository(dbContext, new MacroEngine());
-    var query = new Klacks_api.Queries.Breaks.ListQuery(filter);
+    var query = new Klacks.Api.Queries.Breaks.ListQuery(filter);
     var handler = new GetListQueryHandler(_mapper, repository);
 
     //Act

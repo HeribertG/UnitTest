@@ -1,9 +1,9 @@
 using AutoMapper;
-using Klacks_api.AutoMapper;
+using Klacks.Api.AutoMappers;
 
 namespace UnitTest.Mapping
 {
-  public class ApplicationMappingProfileTest
+    public class ApplicationMappingProfileTest
   {
     [Test]
     public void Automapper_Configuration_IsValid()

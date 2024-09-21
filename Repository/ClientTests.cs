@@ -1,22 +1,26 @@
-using Klacks_api.BasicScriptInterpreter;
-using Klacks_api.Datas;
-using Klacks_api.Handlers.Clients;
-using Klacks_api.Models.Associations;
-using Klacks_api.Models.Staffs;
-using Klacks_api.Queries.Clients;
-using Klacks_api.Repositories;
-using Klacks_api.Resources.Filter;
+using AutoMapper;
+using Klacks.Api.BasicScriptInterpreter;
+using Klacks.Api.Datas;
+using Klacks.Api.Handlers.Clients;
+using Klacks.Api.Models.Associations;
+using Klacks.Api.Models.Staffs;
+using Klacks.Api.Queries.Clients;
+using Klacks.Api.Repositories;
+using Klacks.Api.Resources.Filter;
 using Microsoft.AspNetCore.Http;
 using Microsoft.EntityFrameworkCore;
 using UnitTest.FakeData;
 
-namespace UnitTest.Repository
+
+namespace UnitTest.Repository;
+
+internal class ClientTests
 {
-  internal class ClientTests
-  {
+
     public IHttpContextAccessor _httpContextAccessor = null!;
     public TruncatedClient _truncatedClient = null!;
     public DataBaseContext dbContext = null!;
+    private IMapper _mapper = null!;
 
     [TestCase("ag", "", "", 12)]
     [TestCase("gmbh", "", "", 0)]
@@ -33,61 +37,61 @@ namespace UnitTest.Repository
     [TestCase("", "", "ZH", 4)]
     public async Task GetTruncatedListQueryHandler_Filter_Ok(string searchString, string gender, string state, int sum)
     {
-      //Arrange
-      var returns = Clients.TruncatedClient();
-      var filter = Clients.Filter();
-      filter.SearchString = searchString;
+        //Arrange
+        var returns = Clients.TruncatedClient();
+        var filter = Clients.Filter();
+        filter.SearchString = searchString;
 
-      if (!string.IsNullOrEmpty(gender))
-      {
-        switch (gender)
+        if (!string.IsNullOrEmpty(gender))
         {
-          case "Male":
-            filter.Male = true;
-            filter.Female = false;
-            filter.LegalEntity = false;
-            break;
+            switch (gender)
+            {
+                case "Male":
+                    filter.Male = true;
+                    filter.Female = false;
+                    filter.LegalEntity = false;
+                    break;
 
-          case "Female":
-            filter.Male = false;
-            filter.Female = true;
-            filter.LegalEntity = false;
-            break;
+                case "Female":
+                    filter.Male = false;
+                    filter.Female = true;
+                    filter.LegalEntity = false;
+                    break;
 
-          case "LegalEntity":
+                case "LegalEntity":
 
-            filter.Male = false;
-            filter.Female = false;
-            filter.LegalEntity = true;
-            break;
+                    filter.Male = false;
+                    filter.Female = false;
+                    filter.LegalEntity = true;
+                    break;
+            }
         }
-      }
 
-      if (!string.IsNullOrEmpty(state))
-      {
-        foreach (var item in filter.FilteredStateToken)
+        if (!string.IsNullOrEmpty(state))
         {
-          if (item.State != state)
-          {
-            item.Select = false;
-          }
+            foreach (var item in filter.FilteredStateToken)
+            {
+                if (item.State != state)
+                {
+                    item.Select = false;
+                }
+            }
         }
-      }
 
-      var options = new DbContextOptionsBuilder<DataBaseContext>()
-      .UseInMemoryDatabase(databaseName: Guid.NewGuid().ToString()).Options;
-      dbContext = new DataBaseContext(options, _httpContextAccessor);
+        var options = new DbContextOptionsBuilder<DataBaseContext>()
+        .UseInMemoryDatabase(databaseName: Guid.NewGuid().ToString()).Options;
+        dbContext = new DataBaseContext(options, _httpContextAccessor);
 
-      dbContext.Database.EnsureCreated();
-      DataSeed(_truncatedClient);
-      var repository = new ClientRepository(dbContext, new MacroEngine());
-      var query = new GetTruncatedListQuery(filter);
-      var handler = new GetTruncatedListQueryHandler(repository);
-      //Act
-      var result = await handler.Handle(query, default);
-      //Assert
-      result.Should().NotBeNull();
-      result.Clients.Should().HaveCount(sum);
+        dbContext.Database.EnsureCreated();
+        DataSeed(_truncatedClient);
+        var repository = new ClientRepository(dbContext, new MacroEngine());
+        var query = new GetTruncatedListQuery(filter);
+        var handler = new GetTruncatedListQueryHandler(repository, _mapper);
+        //Act
+        var result = await handler.Handle(query, default);
+        //Assert
+        result.Should().NotBeNull();
+        result.Clients.Should().HaveCount(sum);
     }
 
     /// <summary>
@@ -98,26 +102,26 @@ namespace UnitTest.Repository
     [TestCase(24, 1)]
     public async Task GetTruncatedListQueryHandler_Pagination_NotOk(int numberOfItemsPerPage, int requiredPage)
     {
-      //Arrange
-      var returns = Clients.TruncatedClient();
-      var filter = Clients.Filter();
-      filter.NumberOfItemsPerPage = numberOfItemsPerPage;
-      filter.RequiredPage = requiredPage;
-      var options = new DbContextOptionsBuilder<DataBaseContext>()
-      .UseInMemoryDatabase(databaseName: Guid.NewGuid().ToString()).Options;
-      dbContext = new DataBaseContext(options, _httpContextAccessor);
+        //Arrange
+        var returns = Clients.TruncatedClient();
+        var filter = Clients.Filter();
+        filter.NumberOfItemsPerPage = numberOfItemsPerPage;
+        filter.RequiredPage = requiredPage;
+        var options = new DbContextOptionsBuilder<DataBaseContext>()
+        .UseInMemoryDatabase(databaseName: Guid.NewGuid().ToString()).Options;
+        dbContext = new DataBaseContext(options, _httpContextAccessor);
 
-      dbContext.Database.EnsureCreated();
-      DataSeed(_truncatedClient);
-      var repository = new ClientRepository(dbContext, new MacroEngine());
-      var query = new GetTruncatedListQuery(filter);
-      var handler = new GetTruncatedListQueryHandler(repository);
-      //Act
-      var result = await handler.Handle(query, default);
-      //Assert
-      result.Should().NotBeNull();
-      result.Clients.Should().HaveCount(0);
-      result.FirstItemOnPage.Should().Be(-1);
+        dbContext.Database.EnsureCreated();
+        DataSeed(_truncatedClient);
+        var repository = new ClientRepository(dbContext, new MacroEngine());
+        var query = new GetTruncatedListQuery(filter);
+        var handler = new GetTruncatedListQueryHandler(repository, _mapper);
+        //Act
+        var result = await handler.Handle(query, default);
+        //Assert
+        result.Should().NotBeNull();
+        result.Clients.Should().HaveCount(0);
+        result.FirstItemOnPage.Should().Be(-1);
     }
 
     /// <summary>
@@ -133,92 +137,92 @@ namespace UnitTest.Repository
     [TestCase(20, 1, 4)]
     public async Task GetTruncatedListQueryHandler_Pagination_Ok(int numberOfItemsPerPage, int requiredPage, int maxItems)
     {
-      //Arrange
-      var returns = Clients.TruncatedClient();
-      var filter = Clients.Filter();
-      filter.NumberOfItemsPerPage = numberOfItemsPerPage;
-      filter.RequiredPage = requiredPage;
-      var options = new DbContextOptionsBuilder<DataBaseContext>()
-      .UseInMemoryDatabase(databaseName: Guid.NewGuid().ToString()).Options;
-      dbContext = new DataBaseContext(options, _httpContextAccessor);
+        //Arrange
+        var returns = Clients.TruncatedClient();
+        var filter = Clients.Filter();
+        filter.NumberOfItemsPerPage = numberOfItemsPerPage;
+        filter.RequiredPage = requiredPage;
+        var options = new DbContextOptionsBuilder<DataBaseContext>()
+        .UseInMemoryDatabase(databaseName: Guid.NewGuid().ToString()).Options;
+        dbContext = new DataBaseContext(options, _httpContextAccessor);
 
-      dbContext.Database.EnsureCreated();
-      DataSeed(_truncatedClient);
-      var repository = new ClientRepository(dbContext, new MacroEngine());
-      var query = new GetTruncatedListQuery(filter);
-      var handler = new GetTruncatedListQueryHandler(repository);
-      //Act
-      var result = await handler.Handle(query, default);
-      //Assert
-      result.Should().NotBeNull();
-      result.Clients.Should().HaveCount(maxItems);
-      result.MaxItems.Should().Be(returns.Clients!.Count());
-      result.CurrentPage.Should().Be(requiredPage);
-      result.FirstItemOnPage.Should().Be(numberOfItemsPerPage * (requiredPage));
+        dbContext.Database.EnsureCreated();
+        DataSeed(_truncatedClient);
+        var repository = new ClientRepository(dbContext, new MacroEngine());
+        var query = new GetTruncatedListQuery(filter);
+        var handler = new GetTruncatedListQueryHandler(repository, _mapper);
+        //Act
+        var result = await handler.Handle(query, default);
+        //Assert
+        result.Should().NotBeNull();
+        result.Clients.Should().HaveCount(maxItems);
+        result.MaxItems.Should().Be(returns.Clients!.Count());
+        result.CurrentPage.Should().Be(requiredPage);
+        result.FirstItemOnPage.Should().Be(numberOfItemsPerPage * (requiredPage));
     }
 
     [SetUp]
     public void Setup()
     {
-      _httpContextAccessor = Substitute.For<IHttpContextAccessor>();
-      _truncatedClient = FakeData.Clients.TruncatedClient();
+        _mapper = Substitute.For<IMapper>();
+        _httpContextAccessor = Substitute.For<IHttpContextAccessor>();
+        _truncatedClient = FakeData.Clients.TruncatedClient();
     }
 
     [TearDown]
     public void TearDown()
     {
-      dbContext.Database.EnsureDeleted();
-      dbContext.Dispose();
+        dbContext.Database.EnsureDeleted();
+        dbContext.Dispose();
     }
 
     private void DataSeed(TruncatedClient truncated)
     {
-      var clients = new List<Client>();
-      var addresses = new List<Address>();
-      var memberships = new List<Membership>();
-      var communications = new List<Communication>();
-      var annotations = new List<Annotation>();
+        var clients = new List<Client>();
+        var addresses = new List<Address>();
+        var memberships = new List<Membership>();
+        var communications = new List<Communication>();
+        var annotations = new List<Annotation>();
 
-      foreach (var item in truncated.Clients!)
-      {
-        if (item.Addresses.Any())
+        foreach (var item in truncated.Clients!)
         {
-          foreach (var address in item.Addresses)
-          {
-            addresses.Add(address);
-          };
+            if (item.Addresses.Any())
+            {
+                foreach (var address in item.Addresses)
+                {
+                    addresses.Add(address);
+                };
+            }
+            if (item.Communications.Any())
+            {
+                foreach (var communication in communications)
+                {
+                    communications.Add(communication);
+                }
+            }
+            if (item.Annotations.Any())
+            {
+                foreach (var annotation in annotations)
+                {
+                    annotations.Add(annotation);
+                }
+            }
+            if (item.Membership != null)
+            {
+                memberships.Add(item.Membership);
+            }
+            item.Addresses.Clear();
+            item.Annotations.Clear();
+            item.Communications.Clear();
+            clients.Add(item);
         }
-        if (item.Communications.Any())
-        {
-          foreach (var communication in communications)
-          {
-            communications.Add(communication);
-          }
-        }
-        if (item.Annotations.Any())
-        {
-          foreach (var annotation in annotations)
-          {
-            annotations.Add(annotation);
-          }
-        }
-        if (item.Membership != null)
-        {
-          memberships.Add(item.Membership);
-        }
-        item.Addresses.Clear();
-        item.Annotations.Clear();
-        item.Communications.Clear();
-        clients.Add(item);
-      }
 
-      dbContext.Client.AddRange(clients);
-      dbContext.Address.AddRange(addresses);
-      dbContext.Membership.AddRange(memberships);
-      dbContext.Communication.AddRange(communications);
-      dbContext.Annotation.AddRange(annotations);
+        dbContext.Client.AddRange(clients);
+        dbContext.Address.AddRange(addresses);
+        dbContext.Membership.AddRange(memberships);
+        dbContext.Communication.AddRange(communications);
+        dbContext.Annotation.AddRange(annotations);
 
-      dbContext.SaveChanges();
+        dbContext.SaveChanges();
     }
-  }
 }

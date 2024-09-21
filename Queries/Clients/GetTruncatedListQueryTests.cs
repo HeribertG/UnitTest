@@ -1,7 +1,7 @@
 using AutoMapper;
-using Klacks_api.Handlers.Clients;
-using Klacks_api.Interfaces;
-using Klacks_api.Queries.Clients;
+using Klacks.Api.Handlers.Clients;
+using Klacks.Api.Interfaces;
+using Klacks.Api.Queries.Clients;
 using MediatR;
 
 namespace UnitTest.Queries.Clients;
@@ -21,7 +21,7 @@ internal class GetTruncatedListQueryTests
     var clientRepositoryMock = Substitute.For<IClientRepository>();
     clientRepositoryMock.Truncated(filter).Returns(returns);
     var query = new GetTruncatedListQuery(filter);
-    var handler = new GetTruncatedListQueryHandler(clientRepositoryMock);
+    var handler = new GetTruncatedListQueryHandler(clientRepositoryMock, _mapper);
 
     //Act
     var result = await handler.Handle(query, default);

@@ -5,6 +5,7 @@ C:\SourceCode\UnitTest\obj\Debug\net8.0\UnitTest.GeneratedMSBuildEditorConfig.ed
 C:\SourceCode\UnitTest\obj\Debug\net8.0\UnitTest.AssemblyInfoInputs.cache
 C:\SourceCode\UnitTest\obj\Debug\net8.0\UnitTest.AssemblyInfo.cs
 C:\SourceCode\UnitTest\obj\Debug\net8.0\UnitTest.csproj.CoreCompileInputs.cache
+C:\SourceCode\UnitTest\obj\Debug\net8.0\UnitTest.sourcelink.json
 C:\SourceCode\UnitTest\bin\Debug\net8.0\testhost.dll
 C:\SourceCode\UnitTest\bin\Debug\net8.0\Klacks.Api.deps.json
 C:\SourceCode\UnitTest\bin\Debug\net8.0\Klacks.Api.runtimeconfig.json
@@ -269,4 +270,3 @@ C:\SourceCode\UnitTest\obj\Debug\net8.0\refint\UnitTest.dll
 C:\SourceCode\UnitTest\obj\Debug\net8.0\UnitTest.pdb
 C:\SourceCode\UnitTest\obj\Debug\net8.0\UnitTest.genruntimeconfig.cache
 C:\SourceCode\UnitTest\obj\Debug\net8.0\ref\UnitTest.dll
-C:\SourceCode\UnitTest\obj\Debug\net8.0\UnitTest.sourcelink.json

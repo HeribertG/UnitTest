@@ -32,6 +32,49 @@ public class KnowledgeRetrievalServiceTests
         _service = new KnowledgeRetrievalService(_embeddings, _reranker, _repo);
     }
 
+    // The preload only pays off when it overlaps the query embedding, and it is only safe when the
+    // scores are not asked for before it has finished: an uncompleted preload must hold ScoreAsync back.
+    [Test]
+    public async Task RetrieveAsync_StartsTheRerankerPreloadEarlyAndWaitsForItBeforeScoring()
+    {
+        var preload = new TaskCompletionSource();
+        _reranker.EnsureLoadedAsync(Arg.Any<CancellationToken>()).Returns(preload.Task);
+        _repo.FindNearestAsync(Arg.Any<float[]>(), Arg.Any<IReadOnlyCollection<string>>(), Arg.Any<bool>(), Arg.Any<int>(), Arg.Any<CancellationToken>())
+            .Returns([new KnowledgeEntry { Kind = KnowledgeEntryKind.Skill, SourceId = "s", Text = "s. Skill." }]);
+        _reranker.ScoreAsync(Arg.Any<string>(), Arg.Any<IReadOnlyList<string>>(), Arg.Any<CancellationToken>())
+            .Returns(new double[] { 0.9 });
+
+        var retrieval = _service.RetrieveAsync("open shifts", [], false, 5, currentRoute: null, CancellationToken.None);
+
+        await _reranker.Received(1).EnsureLoadedAsync(Arg.Any<CancellationToken>());
+        await _repo.Received(1).FindNearestAsync(Arg.Any<float[]>(), Arg.Any<IReadOnlyCollection<string>>(), Arg.Any<bool>(), Arg.Any<int>(), Arg.Any<CancellationToken>());
+        retrieval.IsCompleted.ShouldBeFalse();
+        await _reranker.DidNotReceive().ScoreAsync(Arg.Any<string>(), Arg.Any<IReadOnlyList<string>>(), Arg.Any<CancellationToken>());
+
+        preload.SetResult();
+        var result = await retrieval;
+
+        result.Candidates.Count.ShouldBe(1);
+        await _reranker.Received(1).ScoreAsync(Arg.Any<string>(), Arg.Any<IReadOnlyList<string>>(), Arg.Any<CancellationToken>());
+    }
+
+    // A failed head start is not a failed retrieval: whatever broke the preload breaks ScoreAsync too,
+    // and that is where it belongs. A query without candidates must not fail on a task nobody needed.
+    [Test]
+    public async Task RetrieveAsync_RerankerPreloadFails_StillScoresAndReturnsTheResult()
+    {
+        _reranker.EnsureLoadedAsync(Arg.Any<CancellationToken>())
+            .Returns(Task.FromException(new InvalidOperationException("model download failed")));
+        _repo.FindNearestAsync(Arg.Any<float[]>(), Arg.Any<IReadOnlyCollection<string>>(), Arg.Any<bool>(), Arg.Any<int>(), Arg.Any<CancellationToken>())
+            .Returns([new KnowledgeEntry { Kind = KnowledgeEntryKind.Skill, SourceId = "s", Text = "s. Skill." }]);
+        _reranker.ScoreAsync(Arg.Any<string>(), Arg.Any<IReadOnlyList<string>>(), Arg.Any<CancellationToken>())
+            .Returns(new double[] { 0.9 });
+
+        var result = await _service.RetrieveAsync("open shifts", [], false, 5, currentRoute: null, CancellationToken.None);
+
+        result.Candidates.Count.ShouldBe(1);
+    }
+
     // The whole point of the [retrieval] line is that it emits at runtime. A stopwatch that never
     // reaches a log is indistinguishable from no instrumentation at all, and the numbers it reports
     // are the only ones this chain has - so the wiring is pinned here rather than assumed.

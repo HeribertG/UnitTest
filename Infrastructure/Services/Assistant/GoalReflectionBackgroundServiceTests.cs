@@ -5,7 +5,9 @@
 /// immediately and never invokes IGoalReflectionService; with the flag on, a single reflection cycle
 /// invokes it in a fresh scope and logs the returned candidate count; and an exception thrown by the
 /// reflection service during one cycle is swallowed so a later cycle still runs normally (a single
-/// failing cycle must never take the background service down).
+/// failing cycle must never take the background service down). Also pins the order of the two steps a
+/// cycle performs: revalidation runs BEFORE reflection, so a candidate that is about to expire cannot
+/// block its own successor through the reflection service's duplicate check.
 /// </summary>
 
 using Klacks.Api.Application.Configuration;
@@ -23,6 +25,7 @@ public class GoalReflectionBackgroundServiceTests
     private static readonly TimeSpan CompletionTimeout = TimeSpan.FromSeconds(10);
 
     private IGoalReflectionService _reflectionService = null!;
+    private IGoalCandidateRevalidationService _revalidationService = null!;
     private ServiceProvider _serviceProvider = null!;
     private GoalReflectionBackgroundService? _sut;
 
@@ -30,9 +33,11 @@ public class GoalReflectionBackgroundServiceTests
     public void SetUp()
     {
         _reflectionService = Substitute.For<IGoalReflectionService>();
+        _revalidationService = Substitute.For<IGoalCandidateRevalidationService>();
 
         var services = new ServiceCollection();
         services.AddSingleton(_reflectionService);
+        services.AddSingleton(_revalidationService);
         _serviceProvider = services.BuildServiceProvider();
     }
 
@@ -58,6 +63,7 @@ public class GoalReflectionBackgroundServiceTests
 
         finished.ShouldBe(_sut.ExecuteTask, "the service must return immediately when the flag is off, not poll");
         await _reflectionService.DidNotReceive().RunReflectionCycleAsync(Arg.Any<CancellationToken>());
+        await _revalidationService.DidNotReceive().RunRevalidationCycleAsync(Arg.Any<CancellationToken>());
     }
 
     [Test]
@@ -70,6 +76,20 @@ public class GoalReflectionBackgroundServiceTests
         await _sut.RunCycleAsync(CancellationToken.None);
 
         await _reflectionService.Received(1).RunReflectionCycleAsync(Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task RunCycleAsync_FlagEnabled_RevalidatesBeforeReflecting()
+    {
+        _sut = CreateSut(goalReflectionEnabled: true);
+
+        await _sut.RunCycleAsync(CancellationToken.None);
+
+        Received.InOrder(() =>
+        {
+            _revalidationService.RunRevalidationCycleAsync(Arg.Any<CancellationToken>());
+            _reflectionService.RunReflectionCycleAsync(Arg.Any<CancellationToken>());
+        });
     }
 
     [Test]

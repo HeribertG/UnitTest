@@ -10,6 +10,7 @@
 using Klacks.Api.Application.Interfaces;
 using Klacks.Api.Application.Services.Assistant.Triggers;
 using Klacks.Api.Domain.Constants;
+using Klacks.Api.Domain.Interfaces.Assistant;
 using Klacks.Api.Domain.DTOs.Schedules;
 using Klacks.Api.Domain.Enums;
 using Klacks.Api.Domain.Models.Staffs;
@@ -24,6 +25,7 @@ public class TargetHoursDriftDetectorTests
 {
     private IClientRepository _clientRepository = null!;
     private IWorkRepository _workRepository = null!;
+    private IScheduleActivityProbe _activityProbe = null!;
     private TargetHoursDriftDetector _sut = null!;
 
     private sealed class FixedTimeProvider(DateTimeOffset now) : TimeProvider
@@ -36,11 +38,14 @@ public class TargetHoursDriftDetectorTests
     {
         _clientRepository = Substitute.For<IClientRepository>();
         _workRepository = Substitute.For<IWorkRepository>();
+        _activityProbe = Substitute.For<IScheduleActivityProbe>();
+        _activityProbe.HasAnyWorkInRangeAsync(Arg.Any<DateOnly>(), Arg.Any<DateOnly>(), Arg.Any<CancellationToken>())
+            .Returns(true);
         _sut = CreateSut(new DateTimeOffset(2026, 8, 11, 12, 0, 0, TimeSpan.Zero));
     }
 
     private TargetHoursDriftDetector CreateSut(DateTimeOffset now) =>
-        new(_clientRepository, _workRepository,
+        new(_clientRepository, _workRepository, _activityProbe,
             NullLogger<TargetHoursDriftDetector>.Instance, new FixedTimeProvider(now));
 
     private static Client MakeClient(string firstName = "Anna", EntityTypeEnum type = EntityTypeEnum.Employee) => new()
@@ -305,5 +310,43 @@ public class TargetHoursDriftDetectorTests
             new DateOnly(2026, 7, 31),
             Arg.Any<Guid?>(),
             Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task DetectAsync_PeriodWithoutAnyWork_EmitsNothing()
+    {
+        _activityProbe.HasAnyWorkInRangeAsync(Arg.Any<DateOnly>(), Arg.Any<DateOnly>(), Arg.Any<CancellationToken>())
+            .Returns(false);
+        var client = MakeClient();
+        SetupClients(client);
+        _workRepository.GetPeriodHoursForClients(
+            Arg.Any<List<Guid>>(), Arg.Any<DateOnly>(), Arg.Any<DateOnly>(), Arg.Any<Guid?>(), Arg.Any<CancellationToken>())
+            .Returns(new Dictionary<Guid, PeriodHoursResource>
+            {
+                [client.Id] = new() { Hours = 0, GuaranteedHours = 170 }
+            });
+
+        var events = await _sut.DetectAsync();
+
+        Assert.That(events, Is.Empty);
+    }
+
+    [Test]
+    public async Task GetActiveFingerprintsAsync_PeriodWithoutAnyWork_ReportsNothing()
+    {
+        _activityProbe.HasAnyWorkInRangeAsync(Arg.Any<DateOnly>(), Arg.Any<DateOnly>(), Arg.Any<CancellationToken>())
+            .Returns(false);
+        var client = MakeClient();
+        SetupClients(client);
+        _workRepository.GetPeriodHoursForClients(
+            Arg.Any<List<Guid>>(), Arg.Any<DateOnly>(), Arg.Any<DateOnly>(), Arg.Any<Guid?>(), Arg.Any<CancellationToken>())
+            .Returns(new Dictionary<Guid, PeriodHoursResource>
+            {
+                [client.Id] = new() { Hours = 0, GuaranteedHours = 170 }
+            });
+
+        var fingerprints = await _sut.GetActiveFingerprintsAsync();
+
+        Assert.That(fingerprints, Is.Empty);
     }
 }

@@ -3,13 +3,15 @@
 /// <summary>
 /// Unit tests for PeriodOverdueDetector — covers the empty roster, the Individual skip,
 /// the overdue threshold, severity buckets, the already-sealed skip, the weekly and
-/// biweekly period-end computation and the group-younger-than-period guard.
+/// biweekly period-end computation, the group-younger-than-period guard and the
+/// no-work-in-the-period guard.
 /// </summary>
 
 using Klacks.Api.Application.Interfaces;
 using Klacks.Api.Application.Services.Assistant.Triggers;
 using Klacks.Api.Domain.Constants;
 using Klacks.Api.Domain.Enums;
+using Klacks.Api.Domain.Interfaces.Assistant;
 using Klacks.Api.Domain.Interfaces.Settings;
 using Klacks.Api.Domain.Models.Associations;
 using Klacks.Api.Domain.Models.Schedules;
@@ -23,6 +25,7 @@ public class PeriodOverdueDetectorTests
     private IGroupRepository _groupRepository = null!;
     private ISealedDayRepository _sealedDayRepository = null!;
     private IWeekConfiguration _weekConfiguration = null!;
+    private IScheduleActivityProbe _activityProbe = null!;
     private PeriodOverdueDetector _sut = null!;
 
     [SetUp]
@@ -31,6 +34,9 @@ public class PeriodOverdueDetectorTests
         _groupRepository = Substitute.For<IGroupRepository>();
         _sealedDayRepository = Substitute.For<ISealedDayRepository>();
         _weekConfiguration = Substitute.For<IWeekConfiguration>();
+        _activityProbe = Substitute.For<IScheduleActivityProbe>();
+        _activityProbe.HasWorkInRangeAsync(Arg.Any<Group>(), Arg.Any<DateOnly>(), Arg.Any<DateOnly>(), Arg.Any<CancellationToken>())
+            .Returns(true);
         _sealedDayRepository.GetRangeAsync(Arg.Any<DateOnly>(), Arg.Any<DateOnly>(), Arg.Any<Guid?>(), Arg.Any<CancellationToken>())
             .Returns(new List<SealedDay>());
         StubWeekStart(DayOfWeek.Monday);
@@ -53,7 +59,7 @@ public class PeriodOverdueDetectorTests
         var tp = Substitute.For<TimeProvider>();
         tp.GetUtcNow().Returns(new DateTimeOffset(today.ToDateTime(TimeOnly.MinValue, DateTimeKind.Utc)));
         return new PeriodOverdueDetector(_groupRepository, _sealedDayRepository, _weekConfiguration,
-            NullLogger<PeriodOverdueDetector>.Instance, tp);
+            _activityProbe, NullLogger<PeriodOverdueDetector>.Instance, tp);
     }
 
     private void StubGroups(List<Group> groups)
@@ -266,5 +272,33 @@ public class PeriodOverdueDetectorTests
 
         var groupIds = events.Cast<PeriodOverdueTriggerEvent>().Select(e => e.GroupId).ToList();
         Assert.That(groupIds, Does.Not.Contain(otherRoot.Id));
+    }
+
+    [Test]
+    public async Task DetectAsync_PeriodWithoutAnyWork_EmitsNothing()
+    {
+        _activityProbe.HasWorkInRangeAsync(Arg.Any<Group>(), Arg.Any<DateOnly>(), Arg.Any<DateOnly>(), Arg.Any<CancellationToken>())
+            .Returns(false);
+        StubGroups(new List<Group> { MakeGroup(PaymentInterval.Monthly) });
+        _sut = CreateSut(new DateOnly(2026, 2, 10));
+
+        var events = await _sut.DetectAsync();
+
+        Assert.That(events, Is.Empty);
+    }
+
+    [Test]
+    public async Task DetectAsync_MonthlyGroup_ProbesTheWholeEndedMonth()
+    {
+        StubGroups(new List<Group> { MakeGroup(PaymentInterval.Monthly) });
+        _sut = CreateSut(new DateOnly(2026, 2, 10));
+
+        await _sut.DetectAsync();
+
+        await _activityProbe.Received(1).HasWorkInRangeAsync(
+            Arg.Any<Group>(),
+            new DateOnly(2026, 1, 1),
+            new DateOnly(2026, 1, 31),
+            Arg.Any<CancellationToken>());
     }
 }

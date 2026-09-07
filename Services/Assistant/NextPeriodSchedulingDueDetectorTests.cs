@@ -29,6 +29,7 @@ public class NextPeriodSchedulingDueDetectorTests
     private IGroupRepository _groupRepository = null!;
     private IWeekConfiguration _weekConfiguration = null!;
     private IAnalyseScenarioRepository _scenarioRepository = null!;
+    private IScheduleActivityProbe _activityProbe = null!;
     private IAutoWizardJobRunner _autoWizardJobRunner = null!;
     private IClientRepository _clientRepository = null!;
     private IShiftScheduleRepository _shiftScheduleRepository = null!;
@@ -46,6 +47,9 @@ public class NextPeriodSchedulingDueDetectorTests
         _groupRepository = Substitute.For<IGroupRepository>();
         _weekConfiguration = Substitute.For<IWeekConfiguration>();
         _scenarioRepository = Substitute.For<IAnalyseScenarioRepository>();
+        _activityProbe = Substitute.For<IScheduleActivityProbe>();
+        _activityProbe.HasPlannableShiftsInRangeAsync(Arg.Any<Group>(), Arg.Any<DateOnly>(), Arg.Any<DateOnly>(), Arg.Any<CancellationToken>())
+            .Returns(true);
         _autoWizardJobRunner = Substitute.For<IAutoWizardJobRunner>();
         _clientRepository = Substitute.For<IClientRepository>();
         _shiftScheduleRepository = Substitute.For<IShiftScheduleRepository>();
@@ -74,6 +78,7 @@ public class NextPeriodSchedulingDueDetectorTests
             _groupRepository,
             _weekConfiguration,
             _scenarioRepository,
+            _activityProbe,
             _autoWizardJobRunner,
             _clientRepository,
             _shiftScheduleRepository,
@@ -420,6 +425,18 @@ public class NextPeriodSchedulingDueDetectorTests
         _groupRepository.List().Returns(new List<Group> { group });
         _groupRepository.GetGroupIdsWithMembersAsync(Arg.Any<CancellationToken>())
             .Returns(new List<Guid>());
+
+        var events = await _sut.DetectAsync();
+
+        Assert.That(events, Is.Empty);
+    }
+
+    [Test]
+    public async Task DetectAsync_NextPeriodWithoutPlannableShift_EmitsNothing()
+    {
+        _activityProbe.HasPlannableShiftsInRangeAsync(Arg.Any<Group>(), Arg.Any<DateOnly>(), Arg.Any<DateOnly>(), Arg.Any<CancellationToken>())
+            .Returns(false);
+        StubGroups(MakeGroup(PaymentInterval.Monthly));
 
         var events = await _sut.DetectAsync();
 

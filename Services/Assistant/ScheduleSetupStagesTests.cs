@@ -18,26 +18,26 @@ public class ScheduleSetupStagesTests
 {
     [Test]
     public void For_EmptyInstallation_IsNothingYet() =>
-        ScheduleSetupStages.For(new ScheduleSetupState(false, false, false))
+        ScheduleSetupStages.For(new ScheduleSetupState(false, false, false, false, false))
             .ShouldBe(ScheduleSetupStage.NothingYet);
 
     [Test]
     public void For_OrdersWithoutShifts_IsOrdersButNoShifts() =>
-        ScheduleSetupStages.For(new ScheduleSetupState(true, false, false))
+        ScheduleSetupStages.For(new ScheduleSetupState(true, false, false, false, false))
             .ShouldBe(ScheduleSetupStage.OrdersButNoShifts);
 
     [Test]
     public void For_ShiftsWithoutWork_IsShiftsButNoWork() =>
-        ScheduleSetupStages.For(new ScheduleSetupState(true, true, false))
+        ScheduleSetupStages.For(new ScheduleSetupState(true, true, false, false, false))
             .ShouldBe(ScheduleSetupStage.ShiftsButNoWork);
 
     [Test]
     public void For_ShiftsWithoutOrders_StillReportsShiftsButNoWork() =>
-        ScheduleSetupStages.For(new ScheduleSetupState(false, true, false))
+        ScheduleSetupStages.For(new ScheduleSetupState(false, true, false, false, false))
             .ShouldBe(ScheduleSetupStage.ShiftsButNoWork);
 
     [Test]
     public void For_InstallationWithWork_Throws() =>
         Should.Throw<ArgumentOutOfRangeException>(
-            () => ScheduleSetupStages.For(new ScheduleSetupState(true, true, true)));
+            () => ScheduleSetupStages.For(new ScheduleSetupState(true, true, true, false, false)));
 }

@@ -29,7 +29,7 @@ public class NoScheduleYetDetectorTests
 
     private void StubState(bool hasOrders, bool hasShifts, bool hasWork) =>
         _activityProbe.GetSetupStateAsync(Arg.Any<CancellationToken>())
-            .Returns(new ScheduleSetupState(hasOrders, hasShifts, hasWork));
+            .Returns(new ScheduleSetupState(hasOrders, hasShifts, hasWork, false, false));
 
     [Test]
     public async Task DetectAsync_AnyWorkExists_EmitsNothing()

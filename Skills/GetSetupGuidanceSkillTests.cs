@@ -58,7 +58,7 @@ public class GetSetupGuidanceSkillTests
 
     private void StubState(bool hasOrders, bool hasShifts, bool hasWork) =>
         _activityProbe.GetSetupStateAsync(Arg.Any<CancellationToken>())
-            .Returns(new ScheduleSetupState(hasOrders, hasShifts, hasWork));
+            .Returns(new ScheduleSetupState(hasOrders, hasShifts, hasWork, false, false));
 
     private void StubDropPoint(ErpDropPointResource? dropPoint) =>
         _mediator.Send(Arg.Any<GetDefaultQuery>(), Arg.Any<CancellationToken>())

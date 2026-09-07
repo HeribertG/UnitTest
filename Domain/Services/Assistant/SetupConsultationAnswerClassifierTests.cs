@@ -49,6 +49,15 @@ public class SetupConsultationAnswerClassifierTests
         SetupConsultationAnswerClassifier.ClassifyAttribution(message).ShouldBe(SetupAttributionAnswer.None);
     }
 
+    [TestCase("Wir haben keine Kunden")]
+    [TestCase("Es gibt keinen Auftraggeber")]
+    [TestCase("Nein, keine Kunden")]
+    [TestCase("Kein Kunde bestellt bei uns")]
+    public void ClassifyAttribution_NegatedDomainNoun_ReturnsNone(string message)
+    {
+        SetupConsultationAnswerClassifier.ClassifyAttribution(message).ShouldBe(SetupAttributionAnswer.None);
+    }
+
     [TestCase("Ja")]
     [TestCase("Genau")]
     [TestCase("Stimmt")]
@@ -86,6 +95,13 @@ public class SetupConsultationAnswerClassifierTests
 
     [TestCase("Nein")]
     public void ClassifyOrderSource_LeadingNegation_ReturnsManual(string message)
+    {
+        SetupConsultationAnswerClassifier.ClassifyOrderSource(message).ShouldBe(SetupOrderSourceAnswer.Manual);
+    }
+
+    [TestCase("Wir haben kein ERP")]
+    [TestCase("Nein, keine Schnittstelle")]
+    public void ClassifyOrderSource_NegatedDomainNoun_ReturnsManual(string message)
     {
         SetupConsultationAnswerClassifier.ClassifyOrderSource(message).ShouldBe(SetupOrderSourceAnswer.Manual);
     }

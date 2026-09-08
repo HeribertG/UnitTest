@@ -41,6 +41,9 @@ public class WelcomeFocusResolverTests
         _conditionRepository
             .GetOpenForScopeAsync(Arg.Any<bool>(), Arg.Any<IReadOnlySet<Guid>>(), Arg.Any<int>(), Arg.Any<CancellationToken>())
             .Returns(new List<AgentCondition>());
+        _conditionRepository
+            .CountOpenForScopeAsync(Arg.Any<bool>(), Arg.Any<IReadOnlySet<Guid>>(), Arg.Any<CancellationToken>())
+            .Returns(0);
 
         _dispatchRepository = Substitute.For<IProactiveTriggerDispatchRepository>();
         _dispatchRepository
@@ -205,12 +208,15 @@ public class WelcomeFocusResolverTests
     }
 
     [Test]
-    public async Task ResolveAsync_UnrankedKinds_ProduceGenericFocusWithSurvivingCount()
+    public async Task ResolveAsync_UnrankedKinds_ProduceGenericFocusWithTheOpenFindingsCount()
     {
         GivenJournal(
             Condition(AgentTriggerKinds.UnstaffedShift, AgentTriggerSeverity.High, Older),
             Condition(AgentTriggerKinds.OpenOrder, AgentTriggerSeverity.Medium, Newer),
             Condition(AgentTriggerKinds.ContractExpiringSoon, AgentTriggerSeverity.Low, Newer));
+        _conditionRepository
+            .CountOpenForScopeAsync(Arg.Any<bool>(), Arg.Any<IReadOnlySet<Guid>>(), Arg.Any<CancellationToken>())
+            .Returns(7);
 
         var result = await _resolver.ResolveAsync(UserId, CancellationToken.None);
 
@@ -219,7 +225,33 @@ public class WelcomeFocusResolverTests
         result.ActionLabelKey.ShouldBe(WelcomeFocusI18nKeys.GenericAction);
         result.ActionKind.ShouldBe(WelcomeFocusActionKinds.Navigate);
         result.ActionRoute.ShouldBe(ProactiveActionRoutes.Schedule);
-        result.PromptParams[WelcomeFocusParamKeys.Count].ShouldBe("3");
+        result.PromptParams[WelcomeFocusParamKeys.Count].ShouldBe("7");
+    }
+
+    [Test]
+    public async Task ResolveAsync_PeriodWinner_DoesNotQueryTheOpenFindingsCount()
+    {
+        GivenJournal(Condition(AgentTriggerKinds.PeriodOverdue, AgentTriggerSeverity.Medium, Older, PeriodOverduePayload("Nord", "2026-08-31", 7)));
+
+        var result = await _resolver.ResolveAsync(UserId, CancellationToken.None);
+
+        result.ShouldNotBeNull();
+        result!.Kind.ShouldBe(AgentTriggerKinds.PeriodOverdue);
+        await _conditionRepository.DidNotReceive()
+            .CountOpenForScopeAsync(Arg.Any<bool>(), Arg.Any<IReadOnlySet<Guid>>(), Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task ResolveAsync_SameRankAndSeverity_OlderDetectionWins()
+    {
+        var older = Condition(AgentTriggerKinds.UnstaffedShift, AgentTriggerSeverity.Medium, Older);
+        var newer = Condition(AgentTriggerKinds.UnstaffedShift, AgentTriggerSeverity.Medium, Newer);
+        GivenJournal(older, newer);
+
+        var result = await _resolver.ResolveAsync(UserId, CancellationToken.None);
+
+        result.ShouldNotBeNull();
+        result!.ConditionId.ShouldBe(older.Id);
     }
 
     [Test]
@@ -345,6 +377,9 @@ public class WelcomeFocusResolverTests
         _conditionRepository
             .GetOpenForScopeAsync(Arg.Any<bool>(), Arg.Any<IReadOnlySet<Guid>>(), Arg.Any<int>(), Arg.Any<CancellationToken>())
             .Returns(conditions.ToList());
+        _conditionRepository
+            .CountOpenForScopeAsync(Arg.Any<bool>(), Arg.Any<IReadOnlySet<Guid>>(), Arg.Any<CancellationToken>())
+            .Returns(conditions.Length);
     }
 
     private static AgentCondition Condition(string kind, string severity, DateTime detectedAtUtc, string payloadJson = "{}") => new()

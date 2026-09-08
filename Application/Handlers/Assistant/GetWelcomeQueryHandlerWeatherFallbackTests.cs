@@ -24,6 +24,7 @@ public class GetWelcomeQueryHandlerWeatherFallbackTests
     private IPublicHolidayProvider _holidayProvider = null!;
     private IGreetingComposer _greetingComposer = null!;
     private IConfiguration _configuration = null!;
+    private IWelcomeFocusResolver _welcomeFocusResolver = null!;
     private GetWelcomeQueryHandler _handler = null!;
 
     [SetUp]
@@ -43,11 +44,14 @@ public class GetWelcomeQueryHandlerWeatherFallbackTests
         _greetingComposer.ComposeAsync(Arg.Any<GreetingContext>(), Arg.Any<CancellationToken>())
             .Returns((string?)null);
         _configuration = new ConfigurationBuilder().Build();
-        _handler = new GetWelcomeQueryHandler(_suggestionsRanker, _weatherClient, _companyLocationProvider, _onboardingService, _holidayProvider, _greetingComposer, _configuration);
+        _welcomeFocusResolver = Substitute.For<IWelcomeFocusResolver>();
+        _welcomeFocusResolver.ResolveAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns((WelcomeFocusResource?)null);
+        _handler = new GetWelcomeQueryHandler(_suggestionsRanker, _weatherClient, _companyLocationProvider, _onboardingService, _holidayProvider, _greetingComposer, _configuration, _welcomeFocusResolver);
     }
 
     private GetWelcomeQueryHandler HandlerWith(IConfiguration configuration)
-        => new(_suggestionsRanker, _weatherClient, _companyLocationProvider, _onboardingService, _holidayProvider, _greetingComposer, configuration);
+        => new(_suggestionsRanker, _weatherClient, _companyLocationProvider, _onboardingService, _holidayProvider, _greetingComposer, configuration, _welcomeFocusResolver);
 
     [Test]
     public async Task Handle_RequestHasBrowserCoordinates_UsesThemAndSkipsCompanyFallback()
@@ -239,4 +243,42 @@ public class GetWelcomeQueryHandlerWeatherFallbackTests
         IsReopen = false,
         UserId = Guid.NewGuid().ToString(),
     };
+
+    [Test]
+    public async Task Handle_FocusResolverReturnsAFocus_ItIsCarriedOnTheWelcome()
+    {
+        var focus = new WelcomeFocusResource
+        {
+            Kind = "period_overdue",
+            PromptKey = "klacksy.focus.period-overdue.prompt",
+            ActionKind = "navigate",
+            ActionLabelKey = "klacksy.focus.period-overdue.action",
+            ActionRoute = "/workplace/period-closing"
+        };
+        _welcomeFocusResolver.ResolveAsync(Arg.Any<string>(), Arg.Any<CancellationToken>()).Returns(focus);
+
+        var result = await _handler.Handle(BuildQuery(), CancellationToken.None);
+
+        result.Focus.ShouldNotBeNull();
+        result.Focus!.PromptKey.ShouldBe("klacksy.focus.period-overdue.prompt");
+    }
+
+    [Test]
+    public async Task Handle_FocusResolverReturnsNull_LeavesFocusNull()
+    {
+        var result = await _handler.Handle(BuildQuery(), CancellationToken.None);
+
+        result.Focus.ShouldBeNull();
+    }
+
+    [Test]
+    public async Task Handle_ReopenGreeting_StillResolvesTheFocus()
+    {
+        var query = BuildQuery();
+        query.IsReopen = true;
+
+        await _handler.Handle(query, CancellationToken.None);
+
+        await _welcomeFocusResolver.Received(1).ResolveAsync(query.UserId, Arg.Any<CancellationToken>());
+    }
 }

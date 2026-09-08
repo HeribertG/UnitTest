@@ -35,6 +35,17 @@ public class RecipeTriggerVetoQualityTests
         "est-ce", "c'est", "cos'è", "è "
     ];
 
+    // setup-consultation is an informational/advisory recipe (search+ask only, no mutate step)
+    // whose own trigger phrases open with the vetoed words themselves ("Wie fange ich an?",
+    // "How do I get started?"). The generic veto would self-veto it. Owner-approved exemption.
+    // Exemption is deliberately a named allowlist, not an automatic "no mutate step" rule, so a
+    // future recipe never loses this guard just because someone removes its last mutate step -
+    // every exemption stays one reviewable line here. Covers only the question-word veto tests
+    // below; the create-verb guard (anyWordStart: erstell/anleg/erfass/create/crée/crea) that
+    // routes "Erstelle einen Dienst, wie fange ich an?" to create-shift-order is untouched and
+    // must not be exempted by any test that checks it.
+    private static readonly string[] VetoExemptRecipes = ["setup-consultation"];
+
     [Test]
     public void EveryRecipe_MustVetoEnglishQuestionWords()
     {
@@ -42,6 +53,11 @@ public class RecipeTriggerVetoQualityTests
 
         foreach (var (name, trigger) in LoadTriggers())
         {
+            if (VetoExemptRecipes.Contains(name))
+            {
+                continue;
+            }
+
             var startsWith = ReadStartsWithTerms(trigger);
             var missing = RequiredEnglishQuestionVeto.Where(required => !startsWith.Contains(required)).ToList();
             if (missing.Count > 0)
@@ -63,6 +79,11 @@ public class RecipeTriggerVetoQualityTests
 
         foreach (var (name, trigger) in LoadTriggers())
         {
+            if (VetoExemptRecipes.Contains(name))
+            {
+                continue;
+            }
+
             var startsWith = ReadStartsWithTerms(trigger);
             var missing = RequiredCopulaVeto.Where(required => !startsWith.Contains(required)).ToList();
             if (missing.Count > 0)

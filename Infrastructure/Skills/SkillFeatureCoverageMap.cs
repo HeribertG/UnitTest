@@ -41,6 +41,7 @@ public static class SkillFeatureCoverageMap
         ["ProactiveConditionsController"] = Excluded("read-only grid decoration: marks which service-grid entities Klacksy's remediation already handled, read off the condition ledger the list_open_findings skill already exposes in chat"),
         ["ProactiveMessagesController"] = Excluded("Klacksy assistant self-feedback: helpful/dismissed reactions on proactive messages are set via the chat bubble actions, not chat-addressable"),
         ["ProvidersController"] = Covered("list_llm_providers", "create_llm_provider", "update_llm_provider", "delete_llm_provider"),
+        ["ScheduleSetupStateController"] = Excluded("read-only installation setup snapshot for the frontend's own empty-installation detection; same audience and facts as the get_setup_guidance skill, which already covers this for chat"),
         ["SkillCoverageController"] = Excluded("Klacksy skill introspection endpoint, assistant infrastructure"),
         ["KlacksyLearningController"] = Excluded("admin-only review of what Klacksy learned; deliberately no chat skill, a skill that deletes its own learning artefacts would be self-reinforcing"),
         ["SkillRelationsController"] = Excluded("admin-only insight view of the emergent skill-relationship graph (accept/dismiss learned edges); assistant meta-infrastructure, not chat-addressable"),

@@ -693,4 +693,80 @@ public class ProactiveTriggerDispatchRepositoryTests
 
         result.ShouldBeFalse();
     }
+
+    [Test]
+    public async Task GetAcknowledgedConditionIdsAsync_ReturnsOnlyAcknowledgedIdsOfThatUser()
+    {
+        var acknowledgedRowId = Guid.NewGuid();
+        var openRowId = Guid.NewGuid();
+        var foreignRowId = Guid.NewGuid();
+        var acknowledgedConditionId = Guid.NewGuid();
+        var openConditionId = Guid.NewGuid();
+        var foreignConditionId = Guid.NewGuid();
+
+        using (var seedContext = CreateContext())
+        {
+            var repository = new ProactiveTriggerDispatchRepository(seedContext, TimeProvider.System);
+            await repository.RecordAsync(LinkedRow(acknowledgedRowId, "user-a", "dedup-1", acknowledgedConditionId));
+            await repository.RecordAsync(LinkedRow(openRowId, "user-a", "dedup-2", openConditionId));
+            await repository.RecordAsync(LinkedRow(foreignRowId, "user-b", "dedup-3", foreignConditionId));
+            (await repository.AcknowledgeAsync(acknowledgedRowId, "user-a")).ShouldBeTrue();
+            (await repository.AcknowledgeAsync(foreignRowId, "user-b")).ShouldBeTrue();
+        }
+
+        using var context = CreateContext();
+        var sut = new ProactiveTriggerDispatchRepository(context, TimeProvider.System);
+
+        var result = await sut.GetAcknowledgedConditionIdsAsync(
+            "user-a",
+            new[] { acknowledgedConditionId, openConditionId, foreignConditionId });
+
+        result.Count.ShouldBe(1);
+        result.ShouldContain(acknowledgedConditionId);
+        result.ShouldNotContain(openConditionId);
+        result.ShouldNotContain(foreignConditionId);
+    }
+
+    [Test]
+    public async Task GetAcknowledgedConditionIdsAsync_EmptyInput_ReturnsEmptySetWithoutQuerying()
+    {
+        using var context = CreateContext();
+        var repository = new ProactiveTriggerDispatchRepository(context, TimeProvider.System);
+
+        var result = await repository.GetAcknowledgedConditionIdsAsync("user-a", Array.Empty<Guid>());
+
+        result.ShouldBeEmpty();
+    }
+
+    [Test]
+    public async Task GetAcknowledgedConditionIdsAsync_IgnoresIdsThatWereNotAsked()
+    {
+        var rowId = Guid.NewGuid();
+        var acknowledgedConditionId = Guid.NewGuid();
+
+        using (var seedContext = CreateContext())
+        {
+            var repository = new ProactiveTriggerDispatchRepository(seedContext, TimeProvider.System);
+            await repository.RecordAsync(LinkedRow(rowId, "user-a", "dedup-1", acknowledgedConditionId));
+            (await repository.AcknowledgeAsync(rowId, "user-a")).ShouldBeTrue();
+        }
+
+        using var context = CreateContext();
+        var sut = new ProactiveTriggerDispatchRepository(context, TimeProvider.System);
+
+        var result = await sut.GetAcknowledgedConditionIdsAsync("user-a", new[] { Guid.NewGuid() });
+
+        result.ShouldBeEmpty();
+    }
+
+    private static ProactiveTriggerDispatchRow LinkedRow(Guid id, string userId, string dedupKey, Guid conditionId) => new()
+    {
+        Id = id,
+        UserId = userId,
+        TriggerKind = "test_kind",
+        DedupKey = dedupKey,
+        ContentKey = "content",
+        Severity = "low",
+        ConditionId = conditionId
+    };
 }

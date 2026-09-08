@@ -92,6 +92,7 @@ public class SetupRouteResolverTests
             isAdmin: true);
 
         facts.Kind.ShouldBe(SetupRouteKind.ClientlessDuty);
+        facts.ShowTarget.ShouldBe("new-plannable-shift");
         facts.RequiresAdmin.ShouldBeTrue();
         facts.HandoffPhrase.ShouldBeNull();
     }

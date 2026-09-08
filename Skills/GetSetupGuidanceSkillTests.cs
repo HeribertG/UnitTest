@@ -126,5 +126,6 @@ public class GetSetupGuidanceSkillTests
         payload.ShouldContain("new-shift");
         payload.ShouldContain("cut-shift");
         payload.ShouldContain("schedule");
+        payload.ShouldContain("new-plannable-shift");
     }
 }

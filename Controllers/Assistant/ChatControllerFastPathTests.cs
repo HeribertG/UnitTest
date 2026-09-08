@@ -172,4 +172,32 @@ public class ChatControllerFastPathTests
         Assert.That(response!.NavigateTo, Is.EqualTo(FastPathRoute));
         await _mediator.DidNotReceive().Send(Arg.Any<ProcessLLMMessageCommand>());
     }
+
+    [Test]
+    public async Task ProcessMessage_WithoutConversationId_KeepsTheIdTheHandlerCreated()
+    {
+        const string serverConversationId = "44444444-4444-4444-4444-444444444444";
+        _normalizer.Normalize(Arg.Any<string>(), Arg.Any<string>())
+            .Returns(new NormalizedUtterance("wie fange ich an", "wie fange ich an", false, false));
+        _navMatcher.Match(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<IReadOnlyCollection<string>>())
+            .Returns(new NavigationMatchResult
+            {
+                TargetId = null,
+                Route = null,
+                Score = 0.0,
+                Candidates = Array.Empty<NavigationCandidate>()
+            });
+        _mediator.Send(Arg.Any<ProcessLLMMessageCommand>())
+            .Returns(new LLMResponse { Message = "…", ConversationId = serverConversationId });
+
+        var request = new LLMRequest { Message = "Wie fange ich an?", ConversationId = null };
+
+        var result = await _controller.ProcessMessage(request);
+
+        var response = (result.Result as OkObjectResult)!.Value as LLMResponse;
+        Assert.That(response!.ConversationId, Is.EqualTo(serverConversationId),
+            "The handler already persisted state under its own conversation id; replacing it with a "
+            + "fresh GUID hands the client an id nothing is stored under, so the next turn starts an "
+            + "empty conversation and any running recipe is lost.");
+    }
 }

@@ -89,6 +89,15 @@ public class OnnxEmbeddingProviderIdleUnloadTests
     // InferenceSession while Run() is executing on it faults the process instead of throwing. The
     // LoadCount assertion is what keeps the test honest - without it the run passes just as happily
     // when the unloader never managed to unload anything at all.
+    //
+    // Two bursts, not one fixed set of calls: a single burst only *hopes* every caller happens to be
+    // between calls at the same instant the unloader samples activeRuns == 0 (OnnxSessionHolder.cs),
+    // which is a bet on the thread scheduler - under load the callers can run continuously enough that
+    // the window never opens, and the run fails with "LoadCount should be greater than 1 but was 1"
+    // despite nothing being broken. Task.WhenAll on the first burst guarantees activeRuns == 0 the
+    // moment it returns, so the idle window is arranged rather than awaited: the poll loop below waits
+    // for the already-running unloader to observe that real window, and the second burst's first call
+    // is then a structural reload, not a probabilistic one.
     [Test]
     [Category("SlowModelLoad")]
     public async Task EmbedQueryAsync_ParallelCallersWhileUnloaderRuns_NeverFaultsAndReloadsAtLeastOnce()
@@ -108,24 +117,45 @@ public class OnnxEmbeddingProviderIdleUnloadTests
             }
         });
 
-        var callers = Enumerable.Range(0, ParallelCallers)
-            .Select(_ => Task.Run(async () =>
-            {
-                var results = new List<float[]>();
-                for (var i = 0; i < CallsPerCaller; i++)
+        async Task<float[][]> RunBurstAsync()
+        {
+            var callers = Enumerable.Range(0, ParallelCallers)
+                .Select(_ => Task.Run(async () =>
                 {
-                    results.Add(await provider.EmbedQueryAsync(Query, CancellationToken.None));
-                }
+                    var results = new List<float[]>();
+                    for (var i = 0; i < CallsPerCaller; i++)
+                    {
+                        results.Add(await provider.EmbedQueryAsync(Query, CancellationToken.None));
+                    }
 
-                return results;
-            }))
-            .ToArray();
+                    return results;
+                }))
+                .ToArray();
 
-        var embedded = await Task.WhenAll(callers);
+            var embedded = await Task.WhenAll(callers);
+            return embedded.SelectMany(r => r).ToArray();
+        }
+
+        var firstBurst = await RunBurstAsync();
+        var loadCountAfterFirstBurst = provider.LoadCount;
+
+        var deadline = DateTime.UtcNow + TimeSpan.FromSeconds(10);
+        while (provider.IsLoaded && DateTime.UtcNow < deadline)
+        {
+            await Task.Delay(5, CancellationToken.None);
+        }
+
+        provider.IsLoaded.ShouldBeFalse(
+            "The unloader never reclaimed the session during the guaranteed idle window between the " +
+            "two bursts (all callers had returned, so activeRuns was 0) - either TryUnloadIfIdleAsync " +
+            "stopped seeing an idle session, or something is holding a lease open.");
+
+        var secondBurst = await RunBurstAsync();
+
         await callersDone.CancelAsync();
         await unloader;
 
-        foreach (var vector in embedded.SelectMany(r => r))
+        foreach (var vector in firstBurst.Concat(secondBurst))
         {
             vector.Length.ShouldBe(reference.Length);
             for (var i = 0; i < reference.Length; i++)
@@ -134,7 +164,7 @@ public class OnnxEmbeddingProviderIdleUnloadTests
             }
         }
 
-        provider.LoadCount.ShouldBeGreaterThan(1);
+        provider.LoadCount.ShouldBeGreaterThan(loadCountAfterFirstBurst);
     }
 
     // A bulk pass spans several chunks of EmbeddingBatchSize and must hold ONE lease across all of

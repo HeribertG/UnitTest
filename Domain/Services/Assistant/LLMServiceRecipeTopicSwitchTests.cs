@@ -223,8 +223,15 @@ public class LLMServiceRecipeTopicSwitchTests
 
         allFunctionCalls.ShouldContain(c => c.FunctionName == ErpSkill && c.Success);
         responseContent.ShouldContain(ErpAnswer);
+        // The re-ask is appended deterministically (RecipeReplyGuard.SafeAsk with no model reply), so it
+        // is the exact authored translation, not a third model call — see the reask block's comment in
+        // LLMService.cs for why a live re-ask call was tried and reverted.
         responseContent.ShouldContain(TrackingPromptDe);
         askedSlot.ShouldBe(TrackingSlot);
+
+        // Exactly two model calls for this turn: the topic-switch answer iteration, then the final
+        // no-more-calls iteration. No third call for the re-ask.
+        await provider.Received(2).ProcessAsync(Arg.Any<LLMProviderRequest>(), Arg.Any<CancellationToken>());
 
         _pendingRecipeStore.Received(1).Save(Arg.Is<PendingRecipe>(p =>
             p.RecipeName == SetupConsultationLike.Name

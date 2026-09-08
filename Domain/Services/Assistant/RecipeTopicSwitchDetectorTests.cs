@@ -9,8 +9,10 @@
 /// Positive cases cover the exact live repro plus multi-language independent questions and a bare
 /// follow-up question ("Wie meinst du das?"). Negative cases cover the recipe's own chip-style slot values
 /// (yes/no/unknown/create/show/none — several of which collide word-for-word with English question leads
-/// read as bare imperatives) and realistic free-text slot answers from this and other recipes (opinions,
-/// names, group names) that must never be mistaken for a topic switch.
+/// read as bare imperatives), realistic free-text slot answers from this and other recipes (opinions,
+/// names, group names), and — the detector's sharpest false-positive class — a free-text slot answer
+/// (a note) that legitimately OPENS with an interrogative-shaped word without being a question at all,
+/// which is why the detector requires an actual question mark, not just an interrogative lead.
 /// </summary>
 
 using Klacks.Api.Domain.Services.Assistant;
@@ -56,6 +58,8 @@ public class RecipeTopicSwitchDetectorTests
     [TestCase("14:00")]
     [TestCase("Frühdienst")]
     [TestCase("Wir sind ein mittelständisches Unternehmen mit rund 50 Mitarbeitenden")]
+    [TestCase("Was Nachtschichten betrifft: verträgt keine.")]
+    [TestCase("Wie besprochen: keine Zuschläge für diesen Mitarbeiter.")]
     public void IsTopicSwitch_False_For_Realistic_Slot_Answers(string message)
     {
         RecipeTopicSwitchDetector.IsTopicSwitch(message).ShouldBeFalse(message);

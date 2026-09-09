@@ -17,6 +17,7 @@ namespace Klacks.UnitTest.Skills;
 public class NavigateToSkillTests
 {
     private IKlacksyPageKeyCatalog _catalog = null!;
+    private INavigationTargetCatalog _navigationTargetCatalog = null!;
     private INavigationGuidanceProvider _guidanceProvider = null!;
     private NavigateToSkill _skill = null!;
 
@@ -24,12 +25,17 @@ public class NavigateToSkillTests
     public void SetUp()
     {
         _catalog = Substitute.For<IKlacksyPageKeyCatalog>();
+        _navigationTargetCatalog = Substitute.For<INavigationTargetCatalog>();
         _guidanceProvider = Substitute.For<INavigationGuidanceProvider>();
         _skill = new NavigateToSkill(
             _catalog,
+            _navigationTargetCatalog,
             new[] { _guidanceProvider },
             NullLogger<NavigateToSkill>.Instance);
     }
+
+    private static NavigationTargetEntry MakeTarget(string targetId, Dictionary<string, IReadOnlyList<string>>? synonyms = null) =>
+        new(targetId, synonyms ?? new Dictionary<string, IReadOnlyList<string>>());
 
     private static SkillExecutionContext Ctx() => new()
     {
@@ -282,5 +288,140 @@ public class NavigateToSkillTests
         _guidanceProvider.DidNotReceive().CanHandle(Arg.Any<string>());
         await _guidanceProvider.DidNotReceive()
             .GetGuidanceAsync(Arg.Any<string>(), Arg.Any<Guid>(), Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task Navigates_WhenTargetIsAValidTargetIdOfTheResolvedRoute()
+    {
+        _catalog.GetByPageKey("settings").Returns(MakeEntry("settings", "/workplace/settings", hasEntityParam: false));
+        _navigationTargetCatalog.GetByRoute("/workplace/settings")
+            .Returns(new[] { MakeTarget("macros"), MakeTarget("company-rules") });
+        var parameters = new Dictionary<string, object> { ["page"] = "settings", ["target"] = "macros" };
+
+        var result = await _skill.ExecuteAsync(Ctx(), parameters);
+
+        Assert.That(result.Success, Is.True);
+        var dataJson = System.Text.Json.JsonSerializer.Serialize(result.Data);
+        Assert.That(dataJson, Does.Contain("\"Target\":\"macros\""));
+    }
+
+    [Test]
+    public async Task ReturnsError_WhenTargetIsNotAKnownIdOrSynonymOfTheRoute()
+    {
+        _catalog.GetByPageKey("settings").Returns(MakeEntry("settings", "/workplace/settings", hasEntityParam: false));
+        _navigationTargetCatalog.GetByRoute("/workplace/settings")
+            .Returns(new[] { MakeTarget("macros"), MakeTarget("company-rules") });
+        var parameters = new Dictionary<string, object>
+        {
+            ["page"] = "settings",
+            ["target"] = "erp-drop-points-upload-zone"
+        };
+
+        var result = await _skill.ExecuteAsync(Ctx(), parameters);
+
+        Assert.That(result.Success, Is.False);
+        Assert.That(result.Message, Does.Contain("erp-drop-points-upload-zone"));
+        Assert.That(result.Message, Does.Contain("macros"));
+        Assert.That(result.Message, Does.Contain("company-rules"));
+    }
+
+    [Test]
+    public async Task Navigates_WhenTargetIsFreeTextMatchingExactlyOneSynonym()
+    {
+        _catalog.GetByPageKey("settings").Returns(MakeEntry("settings", "/workplace/settings", hasEntityParam: false));
+        _navigationTargetCatalog.GetByRoute("/workplace/settings").Returns(new[]
+        {
+            MakeTarget("manual-upload", new Dictionary<string, IReadOnlyList<string>>
+            {
+                ["de"] = new List<string> { "Manueller Upload" }
+            }),
+            MakeTarget("company-rules")
+        });
+        var parameters = new Dictionary<string, object> { ["page"] = "settings", ["target"] = "manueller-upload" };
+
+        var result = await _skill.ExecuteAsync(Ctx(), parameters);
+
+        Assert.That(result.Success, Is.True);
+        var dataJson = System.Text.Json.JsonSerializer.Serialize(result.Data);
+        Assert.That(dataJson, Does.Contain("\"Target\":\"manual-upload\""));
+    }
+
+    [Test]
+    public async Task ReturnsError_WhenTargetFreeTextMatchesMultipleSynonyms()
+    {
+        _catalog.GetByPageKey("settings").Returns(MakeEntry("settings", "/workplace/settings", hasEntityParam: false));
+        _navigationTargetCatalog.GetByRoute("/workplace/settings").Returns(new[]
+        {
+            MakeTarget("upload-a", new Dictionary<string, IReadOnlyList<string>>
+            {
+                ["de"] = new List<string> { "Upload" }
+            }),
+            MakeTarget("upload-b", new Dictionary<string, IReadOnlyList<string>>
+            {
+                ["en"] = new List<string> { "Upload" }
+            })
+        });
+        var parameters = new Dictionary<string, object> { ["page"] = "settings", ["target"] = "Upload" };
+
+        var result = await _skill.ExecuteAsync(Ctx(), parameters);
+
+        Assert.That(result.Success, Is.False);
+        Assert.That(result.Message, Does.Contain("upload-a"));
+        Assert.That(result.Message, Does.Contain("upload-b"));
+    }
+
+    [Test]
+    public async Task Navigates_WhenTargetIsNullOrEmpty_ValidationIsSkipped()
+    {
+        _catalog.GetByPageKey("settings").Returns(MakeEntry("settings", "/workplace/settings", hasEntityParam: false));
+        var parameters = new Dictionary<string, object> { ["page"] = "settings" };
+
+        var result = await _skill.ExecuteAsync(Ctx(), parameters);
+
+        Assert.That(result.Success, Is.True);
+        _navigationTargetCatalog.DidNotReceive().GetByRoute(Arg.Any<string>());
+    }
+
+    [Test]
+    public async Task Navigates_WhenTargetIsEmptyString_ValidationIsSkipped()
+    {
+        _catalog.GetByPageKey("settings").Returns(MakeEntry("settings", "/workplace/settings", hasEntityParam: false));
+        var parameters = new Dictionary<string, object> { ["page"] = "settings", ["target"] = "" };
+
+        var result = await _skill.ExecuteAsync(Ctx(), parameters);
+
+        Assert.That(result.Success, Is.True);
+        _navigationTargetCatalog.DidNotReceive().GetByRoute(Arg.Any<string>());
+    }
+
+    [Test]
+    public async Task ReturnsError_WhenTargetIsAValidIdButBelongsToAnotherRoute()
+    {
+        _catalog.GetByPageKey("settings").Returns(MakeEntry("settings", "/workplace/settings", hasEntityParam: false));
+        _navigationTargetCatalog.GetByRoute("/workplace/settings")
+            .Returns(new[] { MakeTarget("macros"), MakeTarget("company-rules") });
+        _navigationTargetCatalog.GetByRoute("/workplace/client")
+            .Returns(new[] { MakeTarget("client-search-bar") });
+        var parameters = new Dictionary<string, object> { ["page"] = "settings", ["target"] = "client-search-bar" };
+
+        var result = await _skill.ExecuteAsync(Ctx(), parameters);
+
+        Assert.That(result.Success, Is.False);
+        Assert.That(result.Message, Does.Contain("client-search-bar"));
+    }
+
+    [Test]
+    public async Task Navigates_WhenRouteHasNoKnownTargets_ValidationFailsOpen()
+    {
+        _catalog.GetByPageKey("settings").Returns(MakeEntry("settings", "/workplace/settings", hasEntityParam: false));
+        _navigationTargetCatalog.GetByRoute("/workplace/settings")
+            .Returns(Array.Empty<NavigationTargetEntry>());
+        var parameters = new Dictionary<string, object> { ["page"] = "settings", ["target"] = "whatever" };
+
+        var result = await _skill.ExecuteAsync(Ctx(), parameters);
+
+        Assert.That(result.Success, Is.True);
+        var dataJson = System.Text.Json.JsonSerializer.Serialize(result.Data);
+        Assert.That(dataJson, Does.Contain("\"Target\":\"whatever\""));
     }
 }

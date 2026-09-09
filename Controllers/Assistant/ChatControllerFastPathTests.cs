@@ -78,7 +78,8 @@ public class ChatControllerFastPathTests
                 TargetId = "edit-employee",
                 Route = FastPathRoute,
                 Score = 1.0,
-                Candidates = Array.Empty<NavigationCandidate>()
+                Tier = NavigationMatchTier.Exact,
+                Candidates = new[] { new NavigationCandidate("edit-employee", FastPathRoute, 1.0) }
             });
     }
 
@@ -240,6 +241,7 @@ public class ChatControllerFastPathTests
                 TargetId = null,
                 Route = null,
                 Score = 0.0,
+                Tier = NavigationMatchTier.None,
                 Candidates = Array.Empty<NavigationCandidate>()
             });
         _mediator.Send(Arg.Any<ProcessLLMMessageCommand>())

@@ -32,7 +32,76 @@ public class NavigationTargetMatcherTests
 
         result.TargetId.ShouldBe("llm-provider");
         result.Score.ShouldBe(1.0);
+        result.Tier.ShouldBe(NavigationMatchTier.Exact);
+        result.Candidates.Count().ShouldBe(1);
         result.IsFastPath.ShouldBeTrue();
+    }
+
+    [Test]
+    public void Match_sets_fast_path_when_exact_synonym_resolves_to_exactly_one_allowed_target()
+    {
+        var target = new NavigationTarget { TargetId = "only-target", Route = "/only", LabelKey = "x" };
+        _cache.FindBySynonym("schichten", "de").Returns(new[] { target });
+
+        var result = _sut.Match("schichten", "de", Array.Empty<string>());
+
+        result.TargetId.ShouldBe("only-target");
+        result.Candidates.Count().ShouldBe(1);
+        result.IsFastPath.ShouldBeTrue();
+    }
+
+    [Test]
+    public void Match_does_not_set_fast_path_when_exact_synonym_resolves_to_more_than_one_allowed_target()
+    {
+        var first = new NavigationTarget { TargetId = "shift-plan", Route = "/shifts/plan", LabelKey = "x" };
+        var second = new NavigationTarget { TargetId = "shift-order", Route = "/shifts/order", LabelKey = "y" };
+        _cache.FindBySynonym("schichten", "de").Returns(new[] { first, second });
+
+        var result = _sut.Match("schichten", "de", Array.Empty<string>());
+
+        result.Score.ShouldBe(1.0);
+        result.Tier.ShouldBe(NavigationMatchTier.Exact);
+        result.Candidates.Count().ShouldBe(2);
+        result.IsFastPath.ShouldBeFalse();
+    }
+
+    [Test]
+    public void Match_does_not_fast_path_when_synonym_only_exists_in_a_third_locale()
+    {
+        var target = new NavigationTarget { TargetId = "some-target", Route = "/x", LabelKey = "x" };
+        _cache.FindBySynonym(Arg.Any<string>(), Arg.Any<string>()).Returns(Array.Empty<NavigationTarget>());
+        _cache.FindBySynonymAnyLocale(Arg.Any<string>()).Returns(new[] { target });
+
+        var result = _sut.Match("selesai", "de", Array.Empty<string>());
+
+        result.Tier.ShouldBe(NavigationMatchTier.TokenOverlap);
+        result.IsFastPath.ShouldBeFalse();
+    }
+
+    [Test]
+    public void Match_falls_back_to_english_locale_for_exact_match_when_user_locale_has_no_hit()
+    {
+        var target = new NavigationTarget { TargetId = "t-en", Route = "/en", LabelKey = "x" };
+        _cache.FindBySynonym("overtime", "de").Returns(Array.Empty<NavigationTarget>());
+        _cache.FindBySynonym("overtime", "en").Returns(new[] { target });
+
+        var result = _sut.Match("overtime", "de", Array.Empty<string>());
+
+        result.TargetId.ShouldBe("t-en");
+        result.Tier.ShouldBe(NavigationMatchTier.Exact);
+        result.IsFastPath.ShouldBeTrue();
+    }
+
+    [Test]
+    public void Match_does_not_query_english_locale_when_locale_synonym_already_matches()
+    {
+        var target = new NavigationTarget { TargetId = "t-de", Route = "/de", LabelKey = "x" };
+        _cache.FindBySynonym("schichten", "de").Returns(new[] { target });
+
+        var result = _sut.Match("schichten", "de", Array.Empty<string>());
+
+        result.TargetId.ShouldBe("t-de");
+        _cache.DidNotReceive().FindBySynonym(Arg.Any<string>(), "en");
     }
 
     [Test]
@@ -70,7 +139,8 @@ public class NavigationTargetMatcherTests
         result.TargetId.ShouldBe("t1");
         result.Score.ShouldBe(0.85);
         result.Candidates.Count().ShouldBe(1);
-        result.IsFastPath.ShouldBeTrue();
+        result.Tier.ShouldBe(NavigationMatchTier.TokenOverlap);
+        result.IsFastPath.ShouldBeFalse();
     }
 
     [Test]
@@ -126,6 +196,8 @@ public class NavigationTargetMatcherTests
         result.TargetId.ShouldBe("schedule");
         result.Score.ShouldBeGreaterThan(0.6);
         result.Candidates.Count().ShouldBe(1);
+        result.Tier.ShouldBe(NavigationMatchTier.Fuzzy);
+        result.IsFastPath.ShouldBeFalse();
     }
 
     [Test]

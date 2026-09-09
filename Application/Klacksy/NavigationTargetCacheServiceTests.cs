@@ -72,6 +72,30 @@ public class NavigationTargetCacheServiceTests
     }
 
     [Test]
+    public void GetByRoute_returns_only_targets_of_that_route()
+    {
+        var tempFile = Path.GetTempFileName();
+        File.WriteAllText(tempFile, """
+        [
+          {"targetId":"macros","route":"/workplace/settings","labelKey":"settings.macros","synonyms":{}},
+          {"targetId":"company-rules","route":"/workplace/settings","labelKey":"settings.companyRules","synonyms":{}},
+          {"targetId":"client-search-bar","route":"/workplace/client","labelKey":"client.search","synonyms":{}}
+        ]
+        """);
+
+        var synonymRepo = Substitute.For<INavigationTargetSynonymRepository>();
+        synonymRepo.GetAllAsync(Arg.Any<CancellationToken>()).Returns(new List<NavigationTargetSynonym>());
+
+        var sut = new NavigationTargetCacheService(tempFile, BuildScopeFactory(synonymRepo));
+
+        var settingsTargets = sut.GetByRoute("/workplace/settings");
+
+        settingsTargets.Select(t => t.TargetId).ShouldBe(new[] { "macros", "company-rules" }, ignoreOrder: true);
+        sut.GetByRoute("/workplace/client").Select(t => t.TargetId).ShouldBe(new[] { "client-search-bar" });
+        sut.GetByRoute("/workplace/does-not-exist").ShouldBeEmpty();
+    }
+
+    [Test]
     public void Invalidate_clears_snapshot_so_next_call_reloads()
     {
         var tempFile = Path.GetTempFileName();

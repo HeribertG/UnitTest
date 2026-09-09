@@ -33,6 +33,7 @@ public class NavigationMissDetectorTests
         TargetId = null,
         Route = null,
         Score = 0.0,
+        Tier = NavigationMatchTier.TokenOverlap,
         Candidates = candidates
     };
 

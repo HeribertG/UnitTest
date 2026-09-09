@@ -30,6 +30,7 @@ public class ChatControllerFastPathTests
     private IMediator _mediator = null!;
     private IUtteranceNormalizer _normalizer = null!;
     private INavigationTargetMatcher _navMatcher = null!;
+    private INavigationTargetCacheService _navCache = null!;
     private INavigationFeedbackLogger _navLogger = null!;
     private INavigationMissDetector _navMissDetector = null!;
     private ILLMRepository _llmRepository = null!;
@@ -44,6 +45,7 @@ public class ChatControllerFastPathTests
         _mediator = Substitute.For<IMediator>();
         _normalizer = Substitute.For<IUtteranceNormalizer>();
         _navMatcher = Substitute.For<INavigationTargetMatcher>();
+        _navCache = Substitute.For<INavigationTargetCacheService>();
         _navLogger = Substitute.For<INavigationFeedbackLogger>();
         _navMissDetector = Substitute.For<INavigationMissDetector>();
         _llmRepository = Substitute.For<ILLMRepository>();
@@ -57,7 +59,7 @@ public class ChatControllerFastPathTests
             Substitute.For<ISkillCacheService>(),
             _normalizer,
             _navMatcher,
-            Substitute.For<INavigationTargetCacheService>(),
+            _navCache,
             _navLogger,
             _navMissDetector,
             _llmRepository,
@@ -103,6 +105,108 @@ public class ChatControllerFastPathTests
         Assert.That(response!.NavigateTo, Is.EqualTo(FastPathRoute));
         Assert.That(response.ActionPerformed, Is.True);
         await _mediator.DidNotReceive().Send(Arg.Any<ProcessLLMMessageCommand>());
+    }
+
+    [Test]
+    public async Task FastPath_SetsNavigateToTarget_ForInPageCategory()
+    {
+        const string targetId = "erp-drop-points";
+        const string route = "/workplace/settings";
+        _navMatcher.Match(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<IReadOnlyCollection<string>>())
+            .Returns(new NavigationMatchResult
+            {
+                TargetId = targetId,
+                Route = route,
+                Score = 1.0,
+                Tier = NavigationMatchTier.Exact,
+                Candidates = new[] { new NavigationCandidate(targetId, route, 1.0) }
+            });
+        _navCache.GetById(targetId).Returns(new NavigationTarget
+        {
+            TargetId = targetId,
+            Route = route,
+            LabelKey = "settings.erpDropPoints",
+            Category = "settings.integrations"
+        });
+
+        var request = new LLMRequest { Message = "Zeige mir die Uploadfläche", ConversationId = null };
+
+        var result = await _controller.ProcessMessage(request);
+
+        var ok = result.Result as OkObjectResult;
+        Assert.That(ok, Is.Not.Null);
+        var response = ok!.Value as LLMResponse;
+        Assert.That(response, Is.Not.Null);
+        Assert.That(response!.NavigateTo, Is.EqualTo(route));
+        Assert.That(response.NavigateToTarget, Is.EqualTo(targetId));
+    }
+
+    [Test]
+    public async Task FastPath_OmitsNavigateToTarget_ForPageLevelCategory()
+    {
+        const string targetId = "dashboard";
+        const string route = "/workplace/dashboard";
+        _navMatcher.Match(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<IReadOnlyCollection<string>>())
+            .Returns(new NavigationMatchResult
+            {
+                TargetId = targetId,
+                Route = route,
+                Score = 1.0,
+                Tier = NavigationMatchTier.Exact,
+                Candidates = new[] { new NavigationCandidate(targetId, route, 1.0) }
+            });
+        _navCache.GetById(targetId).Returns(new NavigationTarget
+        {
+            TargetId = targetId,
+            Route = route,
+            LabelKey = "dashboard.label",
+            Category = NavigationTargetCategories.PageLevel
+        });
+
+        var request = new LLMRequest { Message = "Zeige mir das Dashboard", ConversationId = null };
+
+        var result = await _controller.ProcessMessage(request);
+
+        var ok = result.Result as OkObjectResult;
+        Assert.That(ok, Is.Not.Null);
+        var response = ok!.Value as LLMResponse;
+        Assert.That(response, Is.Not.Null);
+        Assert.That(response!.NavigateTo, Is.EqualTo(route));
+        Assert.That(response.NavigateToTarget, Is.Null);
+    }
+
+    [Test]
+    public async Task FastPath_SetsNavigateToTarget_WhenCategoryIsNull()
+    {
+        const string targetId = "contract-form.percent";
+        const string route = "/workplace/contracts";
+        _navMatcher.Match(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<IReadOnlyCollection<string>>())
+            .Returns(new NavigationMatchResult
+            {
+                TargetId = targetId,
+                Route = route,
+                Score = 1.0,
+                Tier = NavigationMatchTier.Exact,
+                Candidates = new[] { new NavigationCandidate(targetId, route, 1.0) }
+            });
+        _navCache.GetById(targetId).Returns(new NavigationTarget
+        {
+            TargetId = targetId,
+            Route = route,
+            LabelKey = "contracts.percent",
+            Category = null
+        });
+
+        var request = new LLMRequest { Message = "Öffne das Prozent-Feld", ConversationId = null };
+
+        var result = await _controller.ProcessMessage(request);
+
+        var ok = result.Result as OkObjectResult;
+        Assert.That(ok, Is.Not.Null);
+        var response = ok!.Value as LLMResponse;
+        Assert.That(response, Is.Not.Null);
+        Assert.That(response!.NavigateTo, Is.EqualTo(route));
+        Assert.That(response.NavigateToTarget, Is.EqualTo(targetId));
     }
 
     [Test]
@@ -227,6 +331,76 @@ public class ChatControllerFastPathTests
         await _navLogger.DidNotReceive().LogOutcomeAsync(
             Arg.Any<string?>(), Arg.Any<string>(), Arg.Any<string?>(), Arg.Any<string>(),
             Arg.Any<string>(), Arg.Any<Guid?>(), Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task StreamFastPath_SetsTargetInMetadata_ForInPageCategory()
+    {
+        const string targetId = "erp-drop-points";
+        const string route = "/workplace/settings";
+        _navMatcher.Match(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<IReadOnlyCollection<string>>())
+            .Returns(new NavigationMatchResult
+            {
+                TargetId = targetId,
+                Route = route,
+                Score = 1.0,
+                Tier = NavigationMatchTier.Exact,
+                Candidates = new[] { new NavigationCandidate(targetId, route, 1.0) }
+            });
+        _navCache.GetById(targetId).Returns(new NavigationTarget
+        {
+            TargetId = targetId,
+            Route = route,
+            LabelKey = "settings.erpDropPoints",
+            Category = "settings.integrations"
+        });
+
+        var body = new MemoryStream();
+        _controller.ControllerContext.HttpContext.Response.Body = body;
+
+        var request = new LLMRequest { Message = "Zeige mir die Uploadfläche", ConversationId = null };
+
+        await _controller.ProcessMessageStream(request, CancellationToken.None);
+
+        body.Position = 0;
+        var sse = new StreamReader(body).ReadToEnd();
+        Assert.That(sse, Does.Contain($"\"target\":\"{targetId}\""));
+    }
+
+    [Test]
+    public async Task StreamFastPath_OmitsTargetInMetadata_ForPageLevelCategory()
+    {
+        const string targetId = "dashboard";
+        const string route = "/workplace/dashboard";
+        _navMatcher.Match(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<IReadOnlyCollection<string>>())
+            .Returns(new NavigationMatchResult
+            {
+                TargetId = targetId,
+                Route = route,
+                Score = 1.0,
+                Tier = NavigationMatchTier.Exact,
+                Candidates = new[] { new NavigationCandidate(targetId, route, 1.0) }
+            });
+        _navCache.GetById(targetId).Returns(new NavigationTarget
+        {
+            TargetId = targetId,
+            Route = route,
+            LabelKey = "dashboard.label",
+            Category = NavigationTargetCategories.PageLevel
+        });
+
+        var body = new MemoryStream();
+        _controller.ControllerContext.HttpContext.Response.Body = body;
+
+        var request = new LLMRequest { Message = "Zeige mir das Dashboard", ConversationId = null };
+
+        await _controller.ProcessMessageStream(request, CancellationToken.None);
+
+        body.Position = 0;
+        var sse = new StreamReader(body).ReadToEnd();
+        Assert.That(sse, Does.Contain($"\"navigateTo\":\"{route}\""),
+            "the metadata event itself must still be present - otherwise the missing \"target\" proves nothing");
+        Assert.That(sse, Does.Not.Contain("\"target\""));
     }
 
     [Test]

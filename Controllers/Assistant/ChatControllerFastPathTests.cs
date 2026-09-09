@@ -31,6 +31,7 @@ public class ChatControllerFastPathTests
     private IUtteranceNormalizer _normalizer = null!;
     private INavigationTargetMatcher _navMatcher = null!;
     private INavigationFeedbackLogger _navLogger = null!;
+    private INavigationMissDetector _navMissDetector = null!;
     private ILLMRepository _llmRepository = null!;
     private ChatController _controller = null!;
 
@@ -44,6 +45,7 @@ public class ChatControllerFastPathTests
         _normalizer = Substitute.For<IUtteranceNormalizer>();
         _navMatcher = Substitute.For<INavigationTargetMatcher>();
         _navLogger = Substitute.For<INavigationFeedbackLogger>();
+        _navMissDetector = Substitute.For<INavigationMissDetector>();
         _llmRepository = Substitute.For<ILLMRepository>();
 
         _controller = new ChatController(
@@ -57,6 +59,7 @@ public class ChatControllerFastPathTests
             _navMatcher,
             Substitute.For<INavigationTargetCacheService>(),
             _navLogger,
+            _navMissDetector,
             _llmRepository,
             Substitute.For<IUserActivityTracker>())
         {
@@ -171,6 +174,58 @@ public class ChatControllerFastPathTests
         var response = ok!.Value as LLMResponse;
         Assert.That(response!.NavigateTo, Is.EqualTo(FastPathRoute));
         await _mediator.DidNotReceive().Send(Arg.Any<ProcessLLMMessageCommand>());
+    }
+
+    [Test]
+    public async Task LlmPath_SetsMissedTargetId_WhenDetectorFlagsACandidate()
+    {
+        const string conversationId = "conv-1";
+        const string navigatedRoute = "/workplace/settings";
+        var suspectedCandidate = new NavigationCandidate("erp-drop-points", navigatedRoute, 0.6);
+        _llmRepository.GetConversationByConversationIdAsync(conversationId, CurrentUserId)
+            .Returns(new LLMConversation { MessageCount = 2 });
+        _mediator.Send(Arg.Any<ProcessLLMMessageCommand>())
+            .Returns(new LLMResponse { Message = "…", NavigateTo = navigatedRoute, NavigateToTarget = null });
+        _navMissDetector.DetectSuspectedMiss(Arg.Any<NavigationMatchResult>(), navigatedRoute, null)
+            .Returns(suspectedCandidate);
+
+        var request = new LLMRequest { Message = "Mitarbeiter", ConversationId = conversationId };
+
+        var result = await _controller.ProcessMessage(request);
+
+        var response = (result.Result as OkObjectResult)!.Value as LLMResponse;
+        Assert.That(response!.MissedTargetId, Is.EqualTo(suspectedCandidate.TargetId));
+        await _navLogger.Received(1).LogOutcomeAsync(
+            Arg.Any<string?>(),
+            Arg.Any<string>(),
+            suspectedCandidate.TargetId,
+            NavigationOutcomeKinds.SuspectedMiss,
+            navigatedRoute,
+            Arg.Any<Guid?>(),
+            Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task LlmPath_LeavesMissedTargetIdEmpty_WhenDetectorFindsNothing()
+    {
+        const string conversationId = "conv-1";
+        const string navigatedRoute = "/workplace/settings";
+        _llmRepository.GetConversationByConversationIdAsync(conversationId, CurrentUserId)
+            .Returns(new LLMConversation { MessageCount = 2 });
+        _mediator.Send(Arg.Any<ProcessLLMMessageCommand>())
+            .Returns(new LLMResponse { Message = "…", NavigateTo = navigatedRoute, NavigateToTarget = null });
+        _navMissDetector.DetectSuspectedMiss(Arg.Any<NavigationMatchResult>(), navigatedRoute, null)
+            .Returns((NavigationCandidate?)null);
+
+        var request = new LLMRequest { Message = "Mitarbeiter", ConversationId = conversationId };
+
+        var result = await _controller.ProcessMessage(request);
+
+        var response = (result.Result as OkObjectResult)!.Value as LLMResponse;
+        Assert.That(response!.MissedTargetId, Is.Null);
+        await _navLogger.DidNotReceive().LogOutcomeAsync(
+            Arg.Any<string?>(), Arg.Any<string>(), Arg.Any<string?>(), Arg.Any<string>(),
+            Arg.Any<string>(), Arg.Any<Guid?>(), Arg.Any<CancellationToken>());
     }
 
     [Test]

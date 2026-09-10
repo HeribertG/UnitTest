@@ -79,12 +79,12 @@ public class NavigationTargetSynonymSeedServiceTests
     }
 
     [Test]
-    public async Task SeedAsync_skips_pairs_with_empty_keyword_arrays()
+    public async Task SeedAsync_reconciles_pairs_with_empty_keyword_arrays_so_stale_seed_rows_are_removed()
     {
         WriteManifest([
             new()
             {
-                TargetId = "absence",
+                TargetId = "shift-group",
                 Synonyms = new Dictionary<string, string[]>
                 {
                     ["de"] = []
@@ -92,10 +92,15 @@ public class NavigationTargetSynonymSeedServiceTests
             }
         ]);
 
+        _repository.SyncSeedKeywordsForTargetLanguageAsync("shift-group", "de", Arg.Any<IReadOnlyCollection<string>>(), Arg.Any<CancellationToken>())
+            .Returns(new NavigationTargetSynonymSyncResult(InsertedCount: 0, RemovedCount: 8, UntouchedForeignCount: 0));
+
         await _service.SeedAsync();
 
-        await _repository.DidNotReceive().SyncSeedKeywordsForTargetLanguageAsync(
-            Arg.Any<string>(), Arg.Any<string>(), Arg.Any<IReadOnlyCollection<string>>(), Arg.Any<CancellationToken>());
+        await _repository.Received(1).SyncSeedKeywordsForTargetLanguageAsync(
+            "shift-group", "de",
+            Arg.Is<IReadOnlyCollection<string>>(k => k.Count == 0),
+            Arg.Any<CancellationToken>());
     }
 
     private void WriteManifest(List<ManifestTarget> targets)

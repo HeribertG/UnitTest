@@ -266,6 +266,25 @@ public class NavigationTargetSynonymRepositoryTests
     }
 
     [Test]
+    public async Task SyncSeedKeywords_with_empty_manifest_list_removes_only_seed_rows()
+    {
+        _context.NavigationTargetSynonyms.AddRange(
+            new NavigationTargetSynonym { Id = Guid.NewGuid(), TargetId = "t1", Language = "de", Keyword = "alter satz", Source = SynonymSources.Seed },
+            new NavigationTargetSynonym { Id = Guid.NewGuid(), TargetId = "t1", Language = "de", Keyword = "plugin-wort", Source = SynonymSources.Plugin },
+            new NavigationTargetSynonym { Id = Guid.NewGuid(), TargetId = "t1", Language = "de", Keyword = "kundenbegriff", Source = SynonymSources.User });
+        await _context.SaveChangesAsync();
+
+        var result = await _repository.SyncSeedKeywordsForTargetLanguageAsync("t1", "de", Array.Empty<string>());
+
+        result.InsertedCount.ShouldBe(0);
+        result.RemovedCount.ShouldBe(1);
+        result.UntouchedForeignCount.ShouldBe(2);
+
+        var active = await _repository.GetActiveForTargetLanguageAsync("t1", "de");
+        active.Select(s => s.Keyword).ShouldBe(new[] { "plugin-wort", "kundenbegriff" }, ignoreOrder: true);
+    }
+
+    [Test]
     public async Task GetByLanguagesAsync_returns_only_requested_languages()
     {
         await _context.NavigationTargetSynonyms.AddRangeAsync(new[]

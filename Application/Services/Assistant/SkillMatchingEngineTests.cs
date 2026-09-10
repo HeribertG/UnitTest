@@ -184,6 +184,38 @@ public class SkillMatchingEngineTests
         };
 
     [Test]
+    public void ShortAnchor_InSynonymsUnderMultipleTag_MatchesAsWholeWord()
+    {
+        var skills = new[]
+        {
+            Skill("configure_smtp", synonyms: new Dictionary<string, List<string>>
+            {
+                [SkillPhraseLanguages.Multiple] = ["api"]
+            })
+        };
+
+        var result = SkillMatchingEngine.TopKeywordMatchedSkillNames(skills, "wo trage ich den API-Key ein");
+
+        result.ShouldBe(["configure_smtp"]);
+    }
+
+    [Test]
+    public void ShortSynonym_UnderRealLanguage_StaysSilenced()
+    {
+        var skills = new[]
+        {
+            Skill("configure_smtp", synonyms: new Dictionary<string, List<string>>
+            {
+                ["de"] = ["api"]
+            })
+        };
+
+        var result = SkillMatchingEngine.TopKeywordMatchedSkillNames(skills, "wo trage ich den API-Key ein");
+
+        result.ShouldBeEmpty();
+    }
+
+    [Test]
     public void ShortAnchor_MatchesAsWholeWord()
     {
         var skills = new[] { AnchorSkill("configure_smtp", "api") };

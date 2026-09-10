@@ -2,9 +2,11 @@
 
 /// <summary>
 /// Guards trigger-keyword quality in skill-seeds.json: no two skills may declare the same set of
-/// trigger keywords. Word-identical keyword lists make the deterministic Tier1 keyword guarantee
+/// trigger keywords. Word-identical keyword lists make the deterministic keyword guarantee
 /// (SkillMatchingEngine) unable to distinguish the skills, so the guarantee cap fills with
-/// alphabetically arbitrary picks instead of the skill the user actually asked for.
+/// alphabetically arbitrary picks instead of the skill the user actually asked for. Also guards
+/// that every skill carries synonyms in all four core languages (de, en, fr, it), which have no
+/// language pack and therefore no other coverage gate.
 /// </summary>
 
 using System.Text.Json;
@@ -16,6 +18,9 @@ public class SkillSeedQualityTests
 {
     private const string SkillSeedsFileName = "skill-seeds.json";
     private const string KeywordSetSeparator = "\u0001";
+    private const string SynonymsProperty = "synonyms";
+
+    private static readonly string[] CoreLanguages = ["de", "en", "fr", "it"];
 
     private static readonly string[] DefinitionsRelativePath =
     [
@@ -82,6 +87,39 @@ public class SkillSeedQualityTests
             $"{SkillSeedsFileName} contains skills with identical triggerKeywords sets; the deterministic " +
             "keyword guarantee cannot rank them and falls back to alphabetical arbitrariness. Give each " +
             "skill action-specific keywords. Colliding groups: " + string.Join(" | ", collisions));
+    }
+
+    [Test]
+    public void Synonyms_EverySkillMustCoverAllCoreLanguages_WithNonEmptyLists()
+    {
+        using var document = JsonDocument.Parse(File.ReadAllText(LocateDefinitionsFile(SkillSeedsFileName)));
+
+        var offenders = new List<string>();
+
+        foreach (var skill in document.RootElement.GetProperty("skills").EnumerateArray())
+        {
+            var skillName = skill.GetProperty("name").GetString() ?? string.Empty;
+            var hasSynonyms = skill.TryGetProperty(SynonymsProperty, out var synonyms)
+                && synonyms.ValueKind == JsonValueKind.Object;
+
+            foreach (var language in CoreLanguages)
+            {
+                var covered = hasSynonyms
+                    && synonyms.TryGetProperty(language, out var list)
+                    && list.ValueKind == JsonValueKind.Array
+                    && list.EnumerateArray().Any(t => !string.IsNullOrWhiteSpace(t.GetString()));
+
+                if (!covered)
+                {
+                    offenders.Add($"{skillName}/{language}");
+                }
+            }
+        }
+
+        offenders.ShouldBeEmpty(
+            $"{SkillSeedsFileName} has skills without synonyms in a core language. The four core languages " +
+            "ship no language pack, so a missing or empty list here silently weakens retrieval and the " +
+            "keyword guarantee for that language. Missing: " + string.Join(", ", offenders));
     }
 
     [Test]

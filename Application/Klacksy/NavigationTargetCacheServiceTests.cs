@@ -120,4 +120,74 @@ public class NavigationTargetCacheServiceTests
         synonymRepo.GetAllAsync(Arg.Any<CancellationToken>()).Returns(new List<NavigationTargetSynonym>());
         sut.FindBySynonym("test", "en").ShouldBeEmpty();
     }
+
+    [Test]
+    public void First_lookup_without_warm_up_sees_empty_snapshot_when_repository_is_asynchronous()
+    {
+        var tempFile = WriteSingleTargetManifest();
+        var pendingLoad = new TaskCompletionSource<IReadOnlyList<NavigationTargetSynonym>>();
+        var synonymRepo = Substitute.For<INavigationTargetSynonymRepository>();
+        synonymRepo.GetAllAsync(Arg.Any<CancellationToken>()).Returns(pendingLoad.Task);
+
+        var sut = new NavigationTargetCacheService(tempFile, BuildScopeFactory(synonymRepo));
+
+        sut.FindBySynonym("uploadfläche", "de").ShouldBeEmpty();
+        sut.GetById("erp-drop-points").ShouldBeNull();
+
+        pendingLoad.SetResult(new List<NavigationTargetSynonym>());
+    }
+
+    [Test]
+    public async Task WarmUpAsync_fills_snapshot_before_first_lookup_when_repository_is_asynchronous()
+    {
+        var tempFile = WriteSingleTargetManifest();
+        var synonymRepo = Substitute.For<INavigationTargetSynonymRepository>();
+        synonymRepo.GetAllAsync(Arg.Any<CancellationToken>()).Returns(_ => LoadAfterYieldAsync());
+
+        var sut = new NavigationTargetCacheService(tempFile, BuildScopeFactory(synonymRepo));
+        await sut.WarmUpAsync();
+
+        sut.FindBySynonym("uploadfläche", "de").Select(t => t.TargetId).ShouldBe(new[] { "erp-drop-points" });
+        sut.GetByRoute("/workplace/settings").ShouldNotBeEmpty();
+    }
+
+    [Test]
+    public async Task WarmUpAsync_reloads_even_when_snapshot_is_still_fresh()
+    {
+        var tempFile = WriteSingleTargetManifest();
+        var synonymRepo = Substitute.For<INavigationTargetSynonymRepository>();
+        synonymRepo.GetAllAsync(Arg.Any<CancellationToken>()).Returns(new List<NavigationTargetSynonym>());
+
+        var sut = new NavigationTargetCacheService(tempFile, BuildScopeFactory(synonymRepo));
+        sut.FindBySynonym("uploadfläche", "de").ShouldBeEmpty();
+
+        synonymRepo.GetAllAsync(Arg.Any<CancellationToken>()).Returns(new List<NavigationTargetSynonym>
+        {
+            new() { TargetId = "erp-drop-points", Language = "de", Keyword = "uploadfläche" }
+        });
+        await sut.WarmUpAsync();
+
+        sut.FindBySynonym("uploadfläche", "de").Count.ShouldBe(1);
+    }
+
+    private static async Task<IReadOnlyList<NavigationTargetSynonym>> LoadAfterYieldAsync()
+    {
+        await Task.Yield();
+        return new List<NavigationTargetSynonym>
+        {
+            new() { TargetId = "erp-drop-points", Language = "de", Keyword = "uploadfläche" }
+        };
+    }
+
+    private static string WriteSingleTargetManifest()
+    {
+        var tempFile = Path.GetTempFileName();
+        File.WriteAllText(tempFile, """
+        [{
+          "targetId":"erp-drop-points","route":"/workplace/settings","labelKey":"settings.erpDropPoints",
+          "synonyms":{}
+        }]
+        """);
+        return tempFile;
+    }
 }

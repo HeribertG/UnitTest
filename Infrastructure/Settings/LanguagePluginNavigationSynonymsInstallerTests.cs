@@ -91,14 +91,25 @@ public class LanguagePluginNavigationSynonymsInstallerTests
     }
 
     [Test]
-    public async Task Uninstall_removes_plugin_rows_only()
+    public async Task Install_removes_plugin_rows_of_targets_the_pack_no_longer_lists()
+    {
+        await _installer.InstallNavigationSynonymsAsync(_scope, Code);
+
+        await _repository.Received(1).RemoveSourceRowsForLanguageExceptAsync(
+            Code, SynonymSources.Plugin,
+            Arg.Is<IReadOnlyCollection<string>>(k => k.Count == 2 && k.Contains(TargetWithPhrases) && k.Contains(TargetWithoutPhrases)),
+            Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task Uninstall_removes_every_plugin_row_of_the_language_and_nothing_else()
     {
         await _installer.UninstallNavigationSynonymsAsync(_scope, Code);
 
-        await _repository.Received(2).SyncSourceKeywordsForTargetLanguageAsync(
-            Arg.Any<string>(), Code,
+        await _repository.Received(1).RemoveSourceRowsForLanguageExceptAsync(
+            Code, SynonymSources.Plugin,
             Arg.Is<IReadOnlyCollection<string>>(k => k.Count == 0),
-            SynonymSources.Plugin, Arg.Any<CancellationToken>());
+            Arg.Any<CancellationToken>());
         await _repository.DidNotReceive().ReplaceForTargetLanguageAsync(
             Arg.Any<string>(), Arg.Any<string>(), Arg.Any<IEnumerable<string>>(), Arg.Any<string>(), Arg.Any<CancellationToken>());
     }

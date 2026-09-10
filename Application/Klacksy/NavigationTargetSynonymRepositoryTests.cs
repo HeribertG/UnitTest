@@ -148,6 +148,38 @@ public class NavigationTargetSynonymRepositoryTests
     }
 
     [Test]
+    public async Task RemoveSourceRowsForLanguageExcept_removes_only_that_source_and_language_outside_the_keep_set()
+    {
+        _context.NavigationTargetSynonyms.AddRange(
+            new NavigationTargetSynonym { Id = Guid.NewGuid(), TargetId = "kept", Language = "ko", Keyword = "a", Source = SynonymSources.Plugin },
+            new NavigationTargetSynonym { Id = Guid.NewGuid(), TargetId = "renamed", Language = "ko", Keyword = "b", Source = SynonymSources.Plugin },
+            new NavigationTargetSynonym { Id = Guid.NewGuid(), TargetId = "renamed", Language = "ko", Keyword = "c", Source = SynonymSources.User },
+            new NavigationTargetSynonym { Id = Guid.NewGuid(), TargetId = "renamed", Language = "ja", Keyword = "d", Source = SynonymSources.Plugin });
+        await _context.SaveChangesAsync();
+
+        var removed = await _repository.RemoveSourceRowsForLanguageExceptAsync("ko", SynonymSources.Plugin, new[] { "kept" });
+
+        removed.ShouldBe(1);
+        var left = await _context.NavigationTargetSynonyms.Select(s => s.Keyword).ToListAsync();
+        left.ShouldBe(new[] { "a", "c", "d" }, ignoreOrder: true);
+    }
+
+    [Test]
+    public async Task RemoveSourceRowsForLanguageExcept_with_empty_keep_set_clears_the_source_of_that_language()
+    {
+        _context.NavigationTargetSynonyms.AddRange(
+            new NavigationTargetSynonym { Id = Guid.NewGuid(), TargetId = "t1", Language = "ko", Keyword = "a", Source = SynonymSources.Plugin },
+            new NavigationTargetSynonym { Id = Guid.NewGuid(), TargetId = "t2", Language = "ko", Keyword = "b", Source = SynonymSources.Plugin },
+            new NavigationTargetSynonym { Id = Guid.NewGuid(), TargetId = "t2", Language = "ko", Keyword = "c", Source = SynonymSources.User });
+        await _context.SaveChangesAsync();
+
+        var removed = await _repository.RemoveSourceRowsForLanguageExceptAsync("ko", SynonymSources.Plugin, Array.Empty<string>());
+
+        removed.ShouldBe(2);
+        (await _context.NavigationTargetSynonyms.Select(s => s.Keyword).ToListAsync()).ShouldBe(new[] { "c" });
+    }
+
+    [Test]
     public async Task SyncSourceKeywords_leaves_no_saved_synonym_tracked()
     {
         _context.NavigationTargetSynonyms.Add(

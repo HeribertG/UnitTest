@@ -314,6 +314,26 @@ public class AddressesControllerTests
     }
 
     [Test]
+    public async Task Validate_GeocoderUnavailable_IsAcceptedLikeAnException_NotRejectedAsNotFound()
+    {
+        // Arrange
+        _mockGeocodingService.ValidateExactAddressAsync(
+            Arg.Any<string?>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>())
+            .Returns(new GeocodingValidationResult { Found = false, ServiceUnavailable = true, MatchType = "error" });
+
+        // Act
+        var result = await _controller.Validate(new AddressValidationRequest { Street = "Bahnhofstrasse 1", Zip = "8001", City = "Zürich", Country = "CH" });
+
+        // Assert
+        var response = (result.Result as OkObjectResult)!.Value as AddressValidationResponse;
+        response.ShouldNotBeNull();
+        response!.IsValid.ShouldBeTrue();
+        response.MatchType.ShouldBe("validation_error");
+        await _mockGeocodingService.DidNotReceive().GetAddressSuggestionsAsync(
+            Arg.Any<string?>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>());
+    }
+
+    [Test]
     public async Task Post_InvalidAddress_ReturnsBadRequest()
     {
         // Arrange

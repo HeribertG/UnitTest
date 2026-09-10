@@ -167,4 +167,22 @@ public class ValidateAddressSkillTests
         result.Success.ShouldBeTrue();
         result.Message!.ShouldContain("Could not validate address");
     }
+
+    [Test]
+    public async Task GeocoderUnavailable_IsReportedAsNotChecked_NotAsNotFound()
+    {
+        _geocodingService.ValidateExactAddressAsync(Arg.Any<string?>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>())
+            .Returns(new GeocodingValidationResult { Found = false, ServiceUnavailable = true, MatchType = "error" });
+
+        var result = await _skill.ExecuteAsync(Ctx(), new Dictionary<string, object>
+        {
+            ["street"] = "Kirchstrasse 52",
+            ["zip"] = "3097",
+            ["city"] = "Liebefeld"
+        });
+
+        result.Success.ShouldBeTrue();
+        result.Message!.ShouldContain("Could not validate address");
+        result.Message!.ShouldNotContain("not found");
+    }
 }

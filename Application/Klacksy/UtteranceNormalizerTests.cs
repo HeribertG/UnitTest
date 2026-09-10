@@ -21,6 +21,9 @@ public class UtteranceNormalizerTests
     [TestCase("Salut Klacksy", "fr", "", true)]
     [TestCase("klaxy llm provider", "de", "llm provider", true)]
     [TestCase("LLM Provider", "de", "llm provider", false)]
+    [TestCase("초과근무 보여줘", "ko", "초과근무", false)]
+    [TestCase("초과근무 좀 보여 주세요", "ko", "초과근무", false)]
+    [TestCase("마을", "ko", "마을", false)]
     public void Normalize_strips_wake_words_and_fillers(string raw, string locale, string expected, bool stripped)
     {
         var result = _sut.Normalize(raw, locale);

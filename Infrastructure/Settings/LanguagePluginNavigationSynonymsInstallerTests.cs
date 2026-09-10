@@ -80,6 +80,17 @@ public class LanguagePluginNavigationSynonymsInstallerTests
     }
 
     [Test]
+    public async Task Install_warms_the_navigation_cache_so_the_first_request_sees_the_new_synonyms()
+    {
+        var cache = Substitute.For<Klacks.Api.Application.Interfaces.Klacksy.INavigationTargetCacheService>();
+        _scope.ServiceProvider.GetService(typeof(Klacks.Api.Application.Interfaces.Klacksy.INavigationTargetCacheService)).Returns(cache);
+
+        await _installer.InstallNavigationSynonymsAsync(_scope, Code);
+
+        await cache.Received(1).WarmUpAsync(Arg.Any<CancellationToken>());
+    }
+
+    [Test]
     public async Task Uninstall_removes_plugin_rows_only()
     {
         await _installer.UninstallNavigationSynonymsAsync(_scope, Code);

@@ -24,6 +24,15 @@ public class UtteranceNormalizerTests
     [TestCase("초과근무 보여줘", "ko", "초과근무", false)]
     [TestCase("초과근무 좀 보여 주세요", "ko", "초과근무", false)]
     [TestCase("마을", "ko", "마을", false)]
+    [TestCase("残業を見せて", "ja", "残業", false)]
+    [TestCase("残業を見せてください", "ja", "残業", false)]
+    [TestCase("klacksy、設定を開いて", "ja", "設定", true)]
+    [TestCase("見せて", "ja", "見せて", false)]
+    [TestCase("打开设置", "zh-CN", "设置", false)]
+    [TestCase("请给我看加班", "zh-CN", "加班", false)]
+    [TestCase("你好klacksy，打开设置吧", "zh-CN", "设置", true)]
+    [TestCase("顯示加班", "zh-TW", "加班", false)]
+    [TestCase("เปิดการตั้งค่าหน่อย", "th", "การตั้งค่า", false)]
     public void Normalize_strips_wake_words_and_fillers(string raw, string locale, string expected, bool stripped)
     {
         var result = _sut.Normalize(raw, locale);

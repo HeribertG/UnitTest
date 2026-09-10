@@ -3,7 +3,7 @@
 /// <summary>
 /// Tests for UtcDateTimeJsonConverter: UTC input ("Z", "+00:00") is accepted as Kind Utc, a non-zero
 /// offset is rejected with a readable message instead of failing later in the database, values
-/// without an offset keep the default behaviour, and writing is unchanged.
+/// without an offset are read as UTC with the same wall clock, and writing is unchanged.
 /// </summary>
 
 using System.Text.Json;
@@ -55,12 +55,20 @@ public class UtcDateTimeJsonConverterTests
     }
 
     [Test]
-    public void ValueWithoutOffset_KeepsTheDefaultBehaviour()
+    public void ValueWithoutOffset_IsReadAsUtc_WithTheSameWallClock()
     {
         var value = JsonSerializer.Deserialize<DateTime>("\"2026-09-10T08:30:00\"", _options);
 
-        value.Kind.ShouldBe(DateTimeKind.Unspecified);
-        value.ShouldBe(new DateTime(2026, 9, 10, 8, 30, 0));
+        value.Kind.ShouldBe(DateTimeKind.Utc);
+        value.ShouldBe(new DateTime(2026, 9, 10, 8, 30, 0, DateTimeKind.Utc));
+    }
+
+    [Test]
+    public void CalendarDateWithoutOffset_LandsOnUtcMidnightOfThatDay()
+    {
+        var value = JsonSerializer.Deserialize<DateTime>("\"2026-09-10T00:00:00\"", _options);
+
+        value.ShouldBe(new DateTime(2026, 9, 10, 0, 0, 0, DateTimeKind.Utc));
     }
 
     [Test]

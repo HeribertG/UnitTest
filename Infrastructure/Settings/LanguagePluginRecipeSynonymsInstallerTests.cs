@@ -8,6 +8,7 @@
 /// per-language synonyms skills already have.
 /// </summary>
 
+using Klacks.Api.Domain.Constants;
 using Klacks.Api.Domain.Interfaces.Assistant;
 using Klacks.Api.Domain.Models.Assistant;
 using Klacks.Api.Infrastructure.Services.Settings;
@@ -83,6 +84,7 @@ public class LanguagePluginRecipeSynonymsInstallerTests
     [Test]
     public async Task Uninstall_RemovesOnlyThatLanguageEntry()
     {
+        GivenPreviousPackPhrases(Term);
         _matching.Synonyms = new Dictionary<string, List<string>>
         {
             [Code] = [Term],
@@ -94,5 +96,35 @@ public class LanguagePluginRecipeSynonymsInstallerTests
         Assert.That(_matching.Synonyms.ContainsKey(Code), Is.False);
         Assert.That(_matching.Synonyms.ContainsKey("de"), Is.True, "other languages must be preserved");
         await _repository.Received(1).UpdateAsync(_matching);
+    }
+
+    [Test]
+    public async Task Uninstall_KeepsAnAdminEditedEntryOfThatLanguage()
+    {
+        GivenPreviousPackPhrases(Term);
+        _matching.Synonyms = new Dictionary<string, List<string>> { [Code] = [Term, "admin edit"] };
+
+        await _installer.UninstallRecipeSynonymsAsync(_scope, Code);
+
+        Assert.That(_matching.Synonyms[Code], Is.EqualTo(new[] { "admin edit" }));
+    }
+
+    [Test]
+    public async Task Reinstall_ReplacesThePreviousPackPhrases_AndKeepsAnAdminEditedEntry()
+    {
+        GivenPreviousPackPhrases("old pack term");
+        _matching.Synonyms = new Dictionary<string, List<string>> { [Code] = ["old pack term", "admin edit"] };
+
+        await _installer.InstallRecipeSynonymsAsync(_scope, Code);
+
+        Assert.That(_matching.Synonyms[Code], Is.EqualTo(new[] { Term, "admin edit" }));
+    }
+
+    private void GivenPreviousPackPhrases(params string[] phrases)
+    {
+        _phraseRepository
+            .GetPhraseTextsBySourceAsync(
+                SkillPhraseOwnerKinds.Recipe, MatchingRecipe, SkillPhraseKinds.Synonym, SkillPhraseSources.LanguagePack, Code, Arg.Any<CancellationToken>())
+            .Returns(phrases);
     }
 }

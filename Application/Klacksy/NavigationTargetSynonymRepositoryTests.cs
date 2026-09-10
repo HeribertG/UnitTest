@@ -148,6 +148,22 @@ public class NavigationTargetSynonymRepositoryTests
     }
 
     [Test]
+    public async Task SyncSourceKeywords_leaves_no_saved_synonym_tracked()
+    {
+        _context.NavigationTargetSynonyms.Add(
+            new NavigationTargetSynonym { Id = Guid.NewGuid(), TargetId = "t1", Language = "ko", Keyword = "old", Source = SynonymSources.Plugin });
+        await _context.SaveChangesAsync();
+
+        for (var i = 0; i < 3; i++)
+        {
+            await _repository.SyncSourceKeywordsForTargetLanguageAsync($"t{i}", "ko", new[] { "a", "b" }, SynonymSources.Plugin);
+        }
+
+        _context.ChangeTracker.Entries<NavigationTargetSynonym>().ShouldBeEmpty();
+        (await _context.NavigationTargetSynonyms.CountAsync()).ShouldBe(6);
+    }
+
+    [Test]
     public async Task SyncSeedKeywords_with_unchanged_seed_only_set_writes_nothing()
     {
         _context.NavigationTargetSynonyms.AddRange(

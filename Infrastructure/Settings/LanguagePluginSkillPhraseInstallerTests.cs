@@ -145,6 +145,38 @@ public class LanguagePluginSkillPhraseInstallerTests
             ignoreOrder: true);
     }
 
+    [Test]
+    public async Task Install_KeepsMirrorEntriesThatDoNotComeFromThePack()
+    {
+        _matching.Synonyms = new Dictionary<string, List<string>> { [Code] = ["recznie dodane"] };
+
+        await _installer.InstallSkillSynonymsAsync(_scope, Code);
+
+        _matching.Synonyms[Code].ShouldBe([Term, "recznie dodane"]);
+    }
+
+    [Test]
+    public async Task Reinstall_ReplacesOnlyThePreviousPackPhrasesInTheMirror()
+    {
+        await GivenPhraseAsync(Code, SkillPhraseSources.LanguagePack, "stary termin");
+        _matching.Synonyms = new Dictionary<string, List<string>> { [Code] = ["stary termin", "recznie dodane"] };
+
+        await _installer.InstallSkillSynonymsAsync(_scope, Code);
+
+        _matching.Synonyms[Code].ShouldBe([Term, "recznie dodane"]);
+    }
+
+    [Test]
+    public async Task Uninstall_KeepsMirrorEntriesThatDoNotComeFromThePack()
+    {
+        await GivenPhraseAsync(Code, SkillPhraseSources.LanguagePack, Term);
+        _matching.Synonyms = new Dictionary<string, List<string>> { [Code] = [Term, "recznie dodane"] };
+
+        await _installer.UninstallSkillSynonymsAsync(_scope, Code);
+
+        _matching.Synonyms[Code].ShouldBe(["recznie dodane"]);
+    }
+
     private async Task GivenPhraseAsync(string language, string source, string phrase)
     {
         _context.SkillPhrases.Add(new SkillPhrase

@@ -34,6 +34,7 @@ public class ChatControllerFastPathTests
     private INavigationFeedbackLogger _navLogger = null!;
     private INavigationMissDetector _navMissDetector = null!;
     private ILLMRepository _llmRepository = null!;
+    private INavigationEntityRouteGuard _entityRouteGuard = null!;
     private ChatController _controller = null!;
 
     private const string FastPathRoute = "/workplace/edit-address";
@@ -49,6 +50,7 @@ public class ChatControllerFastPathTests
         _navLogger = Substitute.For<INavigationFeedbackLogger>();
         _navMissDetector = Substitute.For<INavigationMissDetector>();
         _llmRepository = Substitute.For<ILLMRepository>();
+        _entityRouteGuard = Substitute.For<INavigationEntityRouteGuard>();
 
         _controller = new ChatController(
             Substitute.For<ILogger<ChatController>>(),
@@ -63,7 +65,8 @@ public class ChatControllerFastPathTests
             _navLogger,
             _navMissDetector,
             _llmRepository,
-            Substitute.For<IUserActivityTracker>())
+            Substitute.For<IUserActivityTracker>(),
+            _entityRouteGuard)
         {
             ControllerContext = new ControllerContext
             {
@@ -105,6 +108,20 @@ public class ChatControllerFastPathTests
         Assert.That(response!.NavigateTo, Is.EqualTo(FastPathRoute));
         Assert.That(response.ActionPerformed, Is.True);
         await _mediator.DidNotReceive().Send(Arg.Any<ProcessLLMMessageCommand>());
+    }
+
+    [Test]
+    public async Task FastPath_IsSkipped_WhenTargetRequiresAnEntityId()
+    {
+        _entityRouteGuard.RequiresEntity("edit-employee", FastPathRoute).Returns(true);
+        _mediator.Send(Arg.Any<ProcessLLMMessageCommand>()).Returns(new LLMResponse { Message = "llm" });
+        var request = new LLMRequest { Message = "Mitarbeiter", ConversationId = null };
+
+        var result = await _controller.ProcessMessage(request);
+
+        await _mediator.Received(1).Send(Arg.Any<ProcessLLMMessageCommand>());
+        var response = (result.Result as OkObjectResult)?.Value as LLMResponse;
+        Assert.That(response?.NavigateTo, Is.Not.EqualTo(FastPathRoute));
     }
 
     [Test]

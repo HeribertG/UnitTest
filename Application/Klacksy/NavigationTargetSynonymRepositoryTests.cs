@@ -266,6 +266,30 @@ public class NavigationTargetSynonymRepositoryTests
     }
 
     [Test]
+    public async Task SyncSourceKeywords_for_plugin_keeps_user_and_seed_rows_of_the_pair()
+    {
+        _context.NavigationTargetSynonyms.AddRange(
+            new NavigationTargetSynonym { Id = Guid.NewGuid(), TargetId = "t1", Language = "ko", Keyword = "옛 문구", Source = SynonymSources.Plugin },
+            new NavigationTargetSynonym { Id = Guid.NewGuid(), TargetId = "t1", Language = "ko", Keyword = "고객 용어", Source = SynonymSources.User },
+            new NavigationTargetSynonym { Id = Guid.NewGuid(), TargetId = "t1", Language = "ko", Keyword = "시드 용어", Source = SynonymSources.Seed });
+        await _context.SaveChangesAsync();
+
+        var result = await _repository.SyncSourceKeywordsForTargetLanguageAsync("t1", "ko", new[] { "새 문구" }, SynonymSources.Plugin);
+
+        result.InsertedCount.ShouldBe(1);
+        result.RemovedCount.ShouldBe(1);
+        result.UntouchedForeignCount.ShouldBe(2);
+
+        var active = await _repository.GetActiveForTargetLanguageAsync("t1", "ko");
+        active.Select(s => (s.Keyword, s.Source)).ShouldBe(new[]
+        {
+            ("새 문구", SynonymSources.Plugin),
+            ("고객 용어", SynonymSources.User),
+            ("시드 용어", SynonymSources.Seed),
+        }, ignoreOrder: true);
+    }
+
+    [Test]
     public async Task SyncSeedKeywords_with_empty_manifest_list_removes_only_seed_rows()
     {
         _context.NavigationTargetSynonyms.AddRange(

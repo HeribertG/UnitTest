@@ -16,6 +16,7 @@ using Klacks.Api.Domain.Interfaces.Settings;
 using Klacks.Api.Domain.Models.Assistant;
 using Klacks.Api.Infrastructure.Mediator;
 using Klacks.UnitTest.TestHelpers;
+using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Klacks.UnitTest.Application.Skills;
 
@@ -120,6 +121,8 @@ public class GetSetupGuidanceSkillPhaseTests
             .Returns((Klacks.Api.Application.DTOs.ErpDropPoints.ErpDropPointResource)null!);
         activityProbe.GetSetupStateAsync(Arg.Any<CancellationToken>()).Returns(state);
 
-        return new GetSetupGuidanceSkill(mediator, activityProbe, objectStorageService, settingsReader, companyClock);
+        return new GetSetupGuidanceSkill(
+            mediator, activityProbe, objectStorageService, settingsReader, companyClock,
+            NullLogger<GetSetupGuidanceSkill>.Instance);
     }
 }

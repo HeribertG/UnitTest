@@ -2,13 +2,14 @@
 
 /// <summary>
 /// Architecture guard against DateTime.Parse/TryParse and DateTimeOffset.Parse/TryParse calls that do
-/// not pass a DateTimeStyles argument, in Klacks.Api/Application and Klacks.Api/Domain/Services. Every
-/// timestamp column is 'timestamp with time zone': a value parsed without an explicit style either
-/// keeps DateTimeKind.Unspecified (rejected outright by Npgsql once it reaches a query parameter) or,
-/// for a calendar-boundary value such as a birthdate/validFrom, silently drifts by the caller's local
-/// UTC offset. This is a statement-level scan (walks from the call's opening paren to its matching
-/// closing paren, not line-by-line) because several correct call sites split the DateTimeStyles
-/// argument onto its own line.
+/// not pass a DateTimeStyles argument - or pass only DateTimeStyles.None, which is not an explicit style
+/// in the sense this guard requires (it still yields Kind=Unspecified/Local depending on the input) - in
+/// Klacks.Api/Application and Klacks.Api/Domain/Services. Every timestamp column is 'timestamp with time
+/// zone': a value parsed without a real style either keeps a non-Utc Kind (rejected outright by Npgsql
+/// once it reaches a query parameter) or, for a calendar-boundary value such as a birthdate/validFrom,
+/// silently drifts by the caller's local UTC offset. This is a statement-level scan (walks from the
+/// call's opening paren to its matching closing paren, not line-by-line) because several correct call
+/// sites split the DateTimeStyles argument onto its own line.
 /// </summary>
 
 using System.Text;
@@ -23,8 +24,19 @@ public class DateTimeStylesGuardTests
     private const string SourceFilePattern = "*.cs";
     private const string LineCommentPrefix = "//";
     private const string DateTimeStylesToken = "DateTimeStyles";
+    private const string DateTimeStylesNoneToken = "DateTimeStyles.None";
     private const int MinimumScannedFiles = 2000;
-    private const int MinimumTotalPatternOccurrences = 7;
+
+    /// <summary>
+    /// A fixed sample fed directly to <see cref="FindViolationLines"/> (not the real source tree) so the
+    /// scanner's correctness does not depend on how many real call sites happen to exist right now - a
+    /// prior version of this guard asserted a specific minimum count against the live scan, which made
+    /// the test brittle to unrelated code changes instead of anti-vacuous. Line 1 passes a proper
+    /// DateTimeStyles argument and must NOT be flagged; line 2 passes none and MUST be flagged.
+    /// </summary>
+    private const string ScannerSelfTestSample =
+        "var a = DateTime.TryParse(s, CultureInfo.InvariantCulture, DateTimeStyles.AssumeUniversal | DateTimeStyles.AdjustToUniversal, out var value);\n"
+        + "var b = DateTime.TryParse(s, out var other);\n";
 
     private static readonly Regex ForbiddenCallPattern =
         new(@"\b(DateTime|DateTimeOffset)\.(Parse|TryParse)\(", RegexOptions.Compiled);
@@ -36,7 +48,11 @@ public class DateTimeStylesGuardTests
         {
             ["Application/Constants/MyVersion.cs"] =
                 (1, "Only formats the build timestamp for display in the version string - never reaches " +
-                    "a database column, so the parsed value's Kind is irrelevant to a plain ToString call.")
+                    "a database column, so the parsed value's Kind is irrelevant to a plain ToString call."),
+            ["Domain/Services/Assistant/Skills/SkillParameterTypeValidator.cs"] =
+                (1, "Only the boolean TryParse result is used (out _ discards the parsed value) to check " +
+                    "whether an LLM-supplied skill parameter LOOKS LIKE a date before dispatch - the value " +
+                    "itself never reaches a database column or any caller, so its Kind is irrelevant.")
         };
 
     /// <summary>
@@ -48,7 +64,6 @@ public class DateTimeStylesGuardTests
     private static readonly string[] MultiLineCorrectSites =
     [
         "Application/Skills/GetErpImportStatusSkill.cs",
-        "Application/Skills/UpdateClientBirthdateSkill.cs",
         "Application/Services/Assistant/SlackOwnerBridgeService.cs",
         "Application/Services/Imports/ErpOrderImportRunner.cs"
     ];
@@ -135,10 +150,57 @@ public class DateTimeStylesGuardTests
         var (_, scannedFiles, totalMatches, _) = ScanGuardedDirectories();
 
         scannedFiles.ShouldBeGreaterThan(MinimumScannedFiles);
-        totalMatches.ShouldBeGreaterThanOrEqualTo(
-            MinimumTotalPatternOccurrences,
-            "The DateTime/DateTimeOffset Parse/TryParse pattern matched too few call sites - a broken " +
-            "regex could produce a vacuous green guard.");
+        totalMatches.ShouldBeGreaterThan(
+            0,
+            "The DateTime/DateTimeOffset Parse/TryParse pattern matched no call sites at all in the real " +
+            "source tree - a broken regex could produce a vacuous green guard. The scanner's actual " +
+            "detection logic is proven independently by ScannerSelfTest_DetectsStyledCallAsCorrectAndUnstyledCallAsViolation.");
+    }
+
+    [Test]
+    public void ScannerSelfTest_DetectsStyledCallAsCorrectAndUnstyledCallAsViolation()
+    {
+        var (violationLines, matchCount) = FindViolationLines(ScannerSelfTestSample);
+
+        matchCount.ShouldBe(
+            2,
+            "The regex must match both call sites in the fixed sample - a broken regex could produce a " +
+            "vacuous green guard.");
+        violationLines.ShouldBe(
+            new List<int> { 2 },
+            "Only the unstyled call on line 2 must be flagged; the styled call on line 1 passes " +
+            "DateTimeStyles and must not be.");
+    }
+
+    [Test]
+    public void ScannerSelfTest_FlagsDateTimeStylesNone_EvenThoughTheTokenTechnicallyAppears()
+    {
+        const string sample = "var a = DateTime.TryParse(s, CultureInfo.InvariantCulture, DateTimeStyles.None, out var value);\n";
+
+        var (violationLines, matchCount) = FindViolationLines(sample);
+
+        matchCount.ShouldBe(1);
+        violationLines.ShouldBe(
+            new List<int> { 1 },
+            "DateTimeStyles.None yields Kind=Unspecified/Local depending on the input - exactly the " +
+            "hazard this guard exists to catch. A naive substring check for the token \"DateTimeStyles\" " +
+            "would wrongly treat this call as styled and correct.");
+    }
+
+    [Test]
+    public void ScannerSelfTest_DoesNotFlagDateTimeStylesNoneCombinedWithAnotherFlag()
+    {
+        const string sample =
+            "var a = DateTime.TryParse(s, CultureInfo.InvariantCulture, DateTimeStyles.None | DateTimeStyles.AssumeUniversal, out var value);\n";
+
+        var (violationLines, matchCount) = FindViolationLines(sample);
+
+        matchCount.ShouldBe(1);
+        violationLines.ShouldBeEmpty(
+            "DateTimeStyles.None is the integer value 0, so combined with another flag via '|' it " +
+            "contributes nothing and the call is styled by AssumeUniversal alone - a substring check for " +
+            "\"DateTimeStyles.None\" would wrongly flag this as None-only and correct callers would have " +
+            "to work around a guard bug.");
     }
 
     private static (
@@ -203,13 +265,64 @@ public class DateTimeStylesGuardTests
                 ? text.Substring(openParenIndex, closeParenIndex - openParenIndex + 1)
                 : text[openParenIndex..];
 
-            if (!span.Contains(DateTimeStylesToken, StringComparison.Ordinal))
+            var hasAnExplicitStyle = span.Contains(DateTimeStylesToken, StringComparison.Ordinal);
+            var isNoneOnly = IsNoneOnlyStyleArgument(span);
+            if (!hasAnExplicitStyle || isNoneOnly)
             {
                 violations.Add(CountLineNumber(text, match.Index));
             }
         }
 
         return (violations, matchCount);
+    }
+
+    /// <summary>
+    /// True only when the single call argument that carries "DateTimeStyles" is EXACTLY
+    /// <c>DateTimeStyles.None</c> with nothing combined into it via '|'. DateTimeStyles.None is the
+    /// integer value 0, so a plain substring search for the token cannot tell "None alone" apart from
+    /// "None combined with a real flag" (e.g. <c>None | AssumeUniversal</c>, which is a fully explicit,
+    /// correct style) - only comparing the whole argument text catches that distinction.
+    /// </summary>
+    private static bool IsNoneOnlyStyleArgument(string span)
+    {
+        var argsText = span.Length >= 2 && span[0] == '(' && span[^1] == ')' ? span[1..^1] : span.TrimStart('(');
+
+        foreach (var argument in SplitTopLevelArguments(argsText))
+        {
+            var normalized = string.Concat(argument.Where(c => !char.IsWhiteSpace(c)));
+            if (!normalized.Contains(DateTimeStylesToken, StringComparison.Ordinal))
+            {
+                continue;
+            }
+
+            return string.Equals(normalized, DateTimeStylesNoneToken, StringComparison.Ordinal);
+        }
+
+        return false;
+    }
+
+    private static IEnumerable<string> SplitTopLevelArguments(string argsText)
+    {
+        var depth = 0;
+        var start = 0;
+        for (var i = 0; i < argsText.Length; i++)
+        {
+            switch (argsText[i])
+            {
+                case '(':
+                    depth++;
+                    break;
+                case ')':
+                    depth--;
+                    break;
+                case ',' when depth == 0:
+                    yield return argsText[start..i];
+                    start = i + 1;
+                    break;
+            }
+        }
+
+        yield return argsText[start..];
     }
 
     private static bool IsOnACommentLine(string text, int index)

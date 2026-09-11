@@ -42,4 +42,16 @@ public class EscalationStageAlertTriggerEventTests
         triggerEvent.SummaryParams["dueTime"].ShouldEndWith("America/St_Johns");
         triggerEvent.SummaryParams["dueTime"].ShouldNotContain("UTC");
     }
+
+    [Test]
+    public void SummaryParams_CompanyTimeZoneResolvedFromAWindowsId_DueTimeCarriesTheIanaIdNotTheWindowsId()
+    {
+        var windowsResolvedZone = TimeZoneInfo.FindSystemTimeZoneById("W. Europe Standard Time");
+        var shiftStartUtc = new DateTime(2026, 7, 15, 12, 0, 0, DateTimeKind.Utc);
+        var dueAtUtc = new DateTime(2026, 7, 15, 14, 0, 0, DateTimeKind.Utc);
+        var triggerEvent = new EscalationStageAlertTriggerEvent(
+            Guid.NewGuid(), Guid.NewGuid().ToString(), "Jane Doe", shiftStartUtc, dueAtUtc, windowsResolvedZone);
+
+        triggerEvent.SummaryParams["dueTime"].ShouldEndWith("Europe/Berlin");
+    }
 }

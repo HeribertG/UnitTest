@@ -16,19 +16,6 @@ internal class HolidaysListCalculatorTests
     }
 
     [Test]
-    public void ShouldInitializeWithTheCurrentYear()
-    {
-        // Arrange
-        var currentYear = DateTime.Now.Year;
-
-        // Act
-        _holidaysListCalculator.CurrentYear = currentYear;
-
-        // Assert
-        _holidaysListCalculator.CurrentYear.ShouldBe(currentYear);
-    }
-
-    [Test]
     public void ShouldAddACalendarRule()
     {
         // Arrange
@@ -1103,6 +1090,7 @@ internal class HolidaysListCalculatorTests
             IsPaid = true,
             SubRule = string.Empty
         };
+        _holidaysListCalculator.CurrentYear = 2023;
         _holidaysListCalculator.Add(rule);
         _holidaysListCalculator.ComputeHolidays();
 

@@ -5,26 +5,33 @@
 /// Scoped DbContext), so a Singleton or HostedService that injects it directly would capture that
 /// Scoped dependency for the whole app lifetime - Development's ValidateScopes/ValidateOnBuild would
 /// fail at startup (Incident B1, 2026-09-11: NagerDateHolidayProvider was Singleton and injected
-/// ICompanyClock in its constructor). Finds every concrete Klacks.Api class with ICompanyClock as a
-/// direct constructor parameter via reflection, then source-scans every
-/// <c>services.AddSingleton&lt;...&gt;(...)</c> statement in Infrastructure/Extensions/*.cs and
-/// Program.cs (statement-level - from the "AddSingleton" token to its matching closing paren, like
-/// DateTimeStylesGuardTests - because a registration can split its type arguments onto their own
-/// line) for that class's simple name.
+/// ICompanyClock in its constructor). Finds every concrete Klacks.Api class with ICompanyClock, or with
+/// IEffectiveTimeZoneResolver (itself a thin Scoped wrapper directly injecting ICompanyClock - see
+/// EffectiveTimeZoneResolver - so a Singleton consumer of it would capture the same Scoped dependency
+/// one hop away), as a direct constructor parameter via reflection. It then source-scans every
+/// <c>services.AddSingleton&lt;...&gt;(...)</c> OR <c>services.AddHostedService&lt;...&gt;(...)</c>
+/// statement in the FIXED list of files named in <see cref="RegistrationFileRelativePaths"/> below - a
+/// hosted service is ALWAYS registered as a singleton IHostedService by AddHostedService, so it is the
+/// same captive-dependency shape even though the word "Singleton" never appears at its call site - not
+/// a glob over Infrastructure/Extensions, so a registration added in a new extension file not yet added
+/// to that list is invisible to this guard (statement-level scan - from the token to its matching
+/// closing paren, like DateTimeStylesGuardTests - because a registration can split its type arguments
+/// onto their own line) for that class's simple name.
 ///
 /// Known scope limits (documented rather than silently unchecked):
-/// - Only a DIRECT ICompanyClock constructor parameter is detected. A class that captures it
-///   transitively through another Scoped service is not found by this guard - auditing the full
-///   transitive graph would require building the app's actual ServiceProvider with
-///   ValidateScopes/ValidateOnBuild, which needs the full runtime configuration (DB connection
-///   string, JWT settings, feature/language plugin discovery, ...) this unit test project does not
-///   assemble. The B1 finding's manual audit (2026-09-11) covered the transitive case once; this
-///   guard only prevents the direct case from silently recurring.
-/// - Only <c>services.AddSingleton&lt;...&gt;</c> call sites are treated as violations. A Singleton
-///   registered through a factory lambda that resolves ICompanyClock from the provider at request
-///   time (e.g. inside a per-call method, not captured in a field) would not be a captive dependency
-///   and is out of scope; none of the current AddSingleton factory lambdas do this (checked manually
-///   2026-09-11).
+/// - Only a DIRECT ICompanyClock or IEffectiveTimeZoneResolver constructor parameter is detected. A
+///   class that captures ICompanyClock transitively through some OTHER Scoped service is not found by
+///   this guard - auditing the full transitive graph would require building the app's actual
+///   ServiceProvider with ValidateScopes/ValidateOnBuild, which needs the full runtime configuration (DB
+///   connection string, JWT settings, feature/language plugin discovery, ...) this unit test project
+///   does not assemble. The B1 finding's manual audit (2026-09-11) covered the transitive case once;
+///   this guard only prevents the direct (and the one-hop IEffectiveTimeZoneResolver) case from silently
+///   recurring.
+/// - Only <c>services.AddSingleton&lt;...&gt;</c> and <c>services.AddHostedService&lt;...&gt;</c> call
+///   sites are treated as violations. A Singleton or hosted service registered through a factory lambda
+///   that resolves ICompanyClock from the provider at request time (e.g. inside a per-call method, not
+///   captured in a field) would not be a captive dependency and is out of scope; none of the current
+///   AddSingleton/AddHostedService factory lambdas do this (checked manually 2026-09-11).
 /// </summary>
 
 using System.Text.RegularExpressions;
@@ -38,10 +45,12 @@ public class CompanyClockCaptiveDependencyGuardTests
     private const string ApiProjectDirectory = "Klacks.Api";
     private const int MinimumConsumerCount = 60;
     private const string AddSingletonToken = "AddSingleton";
+    private const string AddHostedServiceToken = "AddHostedService";
 
-    // A known, unrelated Singleton registration used only to prove the statement-level AddSingleton
+    // Known, unrelated registrations used only to prove the statement-level AddSingleton/AddHostedService
     // scan itself actually works (anti-vacuous, mirrors DateTimeStylesGuardTests' MultiLineCorrectSites).
     private const string KnownSingletonPositiveControl = "SettingsChangeVersion";
+    private const string KnownHostedServicePositiveControl = "DataRetentionBackgroundService";
 
     private static readonly string[] RegistrationFileRelativePaths =
     [
@@ -66,45 +75,88 @@ public class CompanyClockCaptiveDependencyGuardTests
             "found via reflection. The guard cannot have inspected the real Klacks.Api assembly, so a " +
             "green result would be meaningless.");
 
-        var (singletonStatements, positiveControlFound) = ScanAddSingletonStatements();
+        var (captiveCandidateStatements, singletonControlFound, hostedServiceControlFound) =
+            ScanCaptiveRegistrationStatements();
 
-        positiveControlFound.ShouldBeTrue(
+        singletonControlFound.ShouldBeTrue(
             $"The known positive control '{KnownSingletonPositiveControl}' was not found inside any " +
             "AddSingleton<...>(...) statement - the statement-level scan itself is broken, so a green " +
             "result below would be meaningless.");
 
+        hostedServiceControlFound.ShouldBeTrue(
+            $"The known positive control '{KnownHostedServicePositiveControl}' was not found inside any " +
+            "AddHostedService<...>(...) statement - the statement-level scan itself is broken, so a " +
+            "green result below would be meaningless.");
+
         var violations = consumers
-            .Where(consumerName => singletonStatements.Any(stmt => ContainsTypeName(stmt, consumerName)))
+            .Where(consumerName => captiveCandidateStatements.Any(stmt => ContainsTypeName(stmt, consumerName)))
             .ToList();
 
         violations.ShouldBeEmpty(
             "These classes have ICompanyClock as a direct constructor parameter but also appear inside " +
-            "an AddSingleton<...>(...) statement - a captive dependency that fails Development's " +
-            $"ValidateScopes/ValidateOnBuild at startup (see NagerDateHolidayProvider, 2026-09-11). " +
-            $"Register as Scoped instead, or resolve ICompanyClock per-call via a scope factory " +
-            $"instead of the constructor.{Environment.NewLine}" +
+            "an AddSingleton<...>(...) or AddHostedService<...>(...) statement - a captive dependency " +
+            "that fails Development's ValidateScopes/ValidateOnBuild at startup (see " +
+            $"NagerDateHolidayProvider, 2026-09-11). Register as Scoped instead, or resolve ICompanyClock " +
+            $"per-call via a scope factory instead of the constructor.{Environment.NewLine}" +
             string.Join(Environment.NewLine, violations.Select(v => $"  {v}")));
+    }
+
+    /// <summary>
+    /// Fixed-sample proof (not the real source tree) that the statement-level scan actually
+    /// distinguishes AddSingleton from AddHostedService call sites, rather than always finding both or
+    /// neither regardless of the token searched for - the real-file positive controls above only prove
+    /// the wiring finds SOMETHING; this proves it finds the RIGHT thing for each token.
+    /// </summary>
+    [Test]
+    public void ScannerSelfTest_ExtractsAddSingletonAndAddHostedServiceStatementsSeparately()
+    {
+        const string sample =
+            "services.AddSingleton<IFoo, Foo>();\n" +
+            "services.AddHostedService<BarBackgroundService>();\n";
+
+        var singletonStatements = ExtractStatements(sample, AddSingletonToken).ToList();
+        var hostedServiceStatements = ExtractStatements(sample, AddHostedServiceToken).ToList();
+
+        singletonStatements.ShouldContain(
+            stmt => ContainsTypeName(stmt, "Foo"),
+            "The AddSingleton scan must find the AddSingleton<Foo> call site.");
+        singletonStatements.ShouldNotContain(
+            stmt => ContainsTypeName(stmt, "BarBackgroundService"),
+            "The AddSingleton scan must not pick up the unrelated AddHostedService call site.");
+
+        hostedServiceStatements.ShouldContain(
+            stmt => ContainsTypeName(stmt, "BarBackgroundService"),
+            "The AddHostedService scan must find the AddHostedService<BarBackgroundService> call site - " +
+            "this is the S3 addition: a hosted service is always a singleton IHostedService even though " +
+            "the word \"Singleton\" never appears at its call site.");
+        hostedServiceStatements.ShouldNotContain(
+            stmt => ContainsTypeName(stmt, "Foo"),
+            "The AddHostedService scan must not pick up the unrelated AddSingleton call site.");
     }
 
     private static List<string> FindDirectCompanyClockConsumers()
     {
         var assembly = typeof(ICompanyClock).Assembly;
+        var effectiveTimeZoneResolverType = typeof(Klacks.Api.Domain.Interfaces.Assistant.IEffectiveTimeZoneResolver);
 
         return assembly.GetTypes()
             .Where(t => t is { IsClass: true, IsAbstract: false })
             .Where(t => t.GetConstructors()
-                .Any(c => c.GetParameters().Any(p => p.ParameterType == typeof(ICompanyClock))))
+                .Any(c => c.GetParameters().Any(p =>
+                    p.ParameterType == typeof(ICompanyClock) || p.ParameterType == effectiveTimeZoneResolverType)))
             .Select(t => t.Name)
             .Distinct(StringComparer.Ordinal)
             .OrderBy(name => name, StringComparer.Ordinal)
             .ToList();
     }
 
-    private static (List<string> Statements, bool PositiveControlFound) ScanAddSingletonStatements()
+    private static (List<string> Statements, bool SingletonControlFound, bool HostedServiceControlFound)
+        ScanCaptiveRegistrationStatements()
     {
         var apiRoot = LocateApiProject();
         var statements = new List<string>();
-        var positiveControlFound = false;
+        var singletonControlFound = false;
+        var hostedServiceControlFound = false;
 
         foreach (var relativePath in RegistrationFileRelativePaths)
         {
@@ -117,25 +169,31 @@ public class CompanyClockCaptiveDependencyGuardTests
             }
 
             var text = File.ReadAllText(absolutePath);
-            foreach (var statement in ExtractAddSingletonStatements(text))
+            foreach (var statement in ExtractStatements(text, AddSingletonToken)
+                .Concat(ExtractStatements(text, AddHostedServiceToken)))
             {
                 statements.Add(statement);
                 if (statement.Contains(KnownSingletonPositiveControl, StringComparison.Ordinal))
                 {
-                    positiveControlFound = true;
+                    singletonControlFound = true;
+                }
+
+                if (statement.Contains(KnownHostedServicePositiveControl, StringComparison.Ordinal))
+                {
+                    hostedServiceControlFound = true;
                 }
             }
         }
 
-        return (statements, positiveControlFound);
+        return (statements, singletonControlFound, hostedServiceControlFound);
     }
 
-    private static IEnumerable<string> ExtractAddSingletonStatements(string text)
+    private static IEnumerable<string> ExtractStatements(string text, string token)
     {
         var index = 0;
         while (true)
         {
-            var tokenIndex = text.IndexOf(AddSingletonToken, index, StringComparison.Ordinal);
+            var tokenIndex = text.IndexOf(token, index, StringComparison.Ordinal);
             if (tokenIndex < 0)
             {
                 yield break;

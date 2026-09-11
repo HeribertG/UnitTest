@@ -24,7 +24,7 @@ public class CompanyClockTests
     {
         _settings = new Dictionary<string, string>(StringComparer.Ordinal);
         _settingsReader = Substitute.For<ISettingsReader>();
-        _settingsReader.GetSettingsByTypesAsync(Arg.Any<IEnumerable<string>>()).Returns(info =>
+        _settingsReader.GetSettingsByTypesAsync(Arg.Any<IEnumerable<string>>(), Arg.Any<CancellationToken>()).Returns(info =>
         {
             var requestedTypes = info.Arg<IEnumerable<string>>();
             return (IReadOnlyDictionary<string, string>)requestedTypes
@@ -170,7 +170,7 @@ public class CompanyClockTests
         await clock.GetTimeZoneAsync();
         await clock.GetNowAsync();
 
-        await _settingsReader.Received(1).GetSettingsByTypesAsync(Arg.Any<IEnumerable<string>>());
+        await _settingsReader.Received(1).GetSettingsByTypesAsync(Arg.Any<IEnumerable<string>>(), Arg.Any<CancellationToken>());
     }
 
     [Test]
@@ -186,7 +186,7 @@ public class CompanyClockTests
         var zone = await clock.GetTimeZoneAsync();
 
         zone.Id.ShouldBe("America/St_Johns");
-        await _settingsReader.Received(2).GetSettingsByTypesAsync(Arg.Any<IEnumerable<string>>());
+        await _settingsReader.Received(2).GetSettingsByTypesAsync(Arg.Any<IEnumerable<string>>(), Arg.Any<CancellationToken>());
     }
 
     [Test]
@@ -259,7 +259,7 @@ public class CompanyClockTests
         var resolution = await clock.GetTimeZoneResolutionAsync();
 
         zone.ShouldBe(resolution.Zone);
-        await _settingsReader.Received(1).GetSettingsByTypesAsync(Arg.Any<IEnumerable<string>>());
+        await _settingsReader.Received(1).GetSettingsByTypesAsync(Arg.Any<IEnumerable<string>>(), Arg.Any<CancellationToken>());
     }
 
     private void SetSetting(string type, string value)

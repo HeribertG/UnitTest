@@ -125,6 +125,18 @@ public class UpdateClientBirthdateSkillTests
             }
 
     [Test]
+    public async Task UpdatesBirthdate_KeepsTheWrittenCalendarDay_ForAnOffsetInput()
+    {
+        var client = WireResolvedClient();
+
+        var result = await _skill.ExecuteAsync(Ctx(), Parameters(birthdate: "1990-05-12T00:00:00+02:00"));
+
+        Assert.That(result.Success, Is.True, result.Message);
+        Assert.That(client.Birthdate, Is.EqualTo(new DateTime(1990, 5, 12, 0, 0, 0, DateTimeKind.Utc)));
+        Assert.That(client.Birthdate!.Value.Kind, Is.EqualTo(DateTimeKind.Utc));
+    }
+
+    [Test]
     public async Task ReturnsError_WhenTheEndpointRejectsTheUpdate()
     {
         WireResolvedClient();

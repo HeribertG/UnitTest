@@ -201,6 +201,7 @@ public class AgentConditionActionServiceInvariantTests
         var random = new Random(seed);
         var repository = new FakeAgentConditionRepository();
         var timeProvider = new SettableTimeProvider(NowUtc);
+        var companyClock = new FixedCompanyClock(NowUtc);
         var ledger = new AgentConditionLedgerService(
             repository, timeProvider, NullLogger<AgentConditionLedgerService>.Instance);
         var governance = Substitute.For<IProactiveGovernanceResolver>();
@@ -310,6 +311,7 @@ public class AgentConditionActionServiceInvariantTests
             skillExecutor,
             reporter,
             timeProvider,
+            companyClock,
             NullLogger<AgentConditionActionService>.Instance)
             .RunAsync(CancellationToken.None);
 

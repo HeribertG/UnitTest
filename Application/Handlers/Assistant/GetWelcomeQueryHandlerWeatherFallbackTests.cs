@@ -9,8 +9,11 @@ using Klacks.Api.Application.Queries.Assistant;
 using Klacks.Api.Domain.Interfaces.Assistant;
 using Klacks.Api.Domain.Interfaces.Settings;
 using Klacks.Api.Domain.Models.Assistant;
+using Klacks.Api.Domain.Models.Settings;
 using Klacks.UnitTest.TestHelpers;
 using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 using NSubstitute;
 using NUnit.Framework;
 using Shouldly;
@@ -29,6 +32,7 @@ public class GetWelcomeQueryHandlerWeatherFallbackTests
     private IConfiguration _configuration = null!;
     private IWelcomeFocusResolver _welcomeFocusResolver = null!;
     private FixedCompanyClock _companyClock = null!;
+    private ICountryResolver _countryResolver = null!;
     private GetWelcomeQueryHandler _handler = null!;
 
     [SetUp]
@@ -52,11 +56,13 @@ public class GetWelcomeQueryHandlerWeatherFallbackTests
         _welcomeFocusResolver.ResolveAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
             .Returns((WelcomeFocusResource?)null);
         _companyClock = new FixedCompanyClock(FixedToday.ToDateTime(TimeOnly.MinValue, DateTimeKind.Utc));
-        _handler = new GetWelcomeQueryHandler(_suggestionsRanker, _weatherClient, _companyLocationProvider, _onboardingService, _holidayProvider, _greetingComposer, _configuration, _welcomeFocusResolver, _companyClock);
+        _countryResolver = Substitute.For<ICountryResolver>();
+        _countryResolver.GetDefaultAsync(Arg.Any<CancellationToken>()).Returns((Countries?)null);
+        _handler = new GetWelcomeQueryHandler(_suggestionsRanker, _weatherClient, _companyLocationProvider, _onboardingService, _holidayProvider, _greetingComposer, _configuration, _welcomeFocusResolver, _companyClock, _countryResolver, NullLogger<GetWelcomeQueryHandler>.Instance);
     }
 
     private GetWelcomeQueryHandler HandlerWith(IConfiguration configuration)
-        => new(_suggestionsRanker, _weatherClient, _companyLocationProvider, _onboardingService, _holidayProvider, _greetingComposer, configuration, _welcomeFocusResolver, _companyClock);
+        => new(_suggestionsRanker, _weatherClient, _companyLocationProvider, _onboardingService, _holidayProvider, _greetingComposer, configuration, _welcomeFocusResolver, _companyClock, _countryResolver, NullLogger<GetWelcomeQueryHandler>.Instance);
 
     [Test]
     public async Task Handle_RequestHasBrowserCoordinates_UsesThemAndSkipsCompanyFallback()
@@ -121,6 +127,102 @@ public class GetWelcomeQueryHandlerWeatherFallbackTests
 
         result.AmbientKey.ShouldBe("klacksy.welcome.ambient.holiday_tomorrow");
         result.AmbientHolidayName.ShouldBe("Auffahrt");
+    }
+
+    [Test]
+    public async Task Handle_NoCountryConfigured_UsesTheCompanysResolvedCountry_NotAHardcodedDefault()
+    {
+        _countryResolver.GetDefaultAsync(Arg.Any<CancellationToken>())
+            .Returns(new Countries { Abbreviation = "US" });
+        var request = BuildRequest(latitude: 10.0, longitude: 20.0);
+        _weatherClient.GetWeatherKeyAsync(Arg.Any<double>(), Arg.Any<double>(), Arg.Any<CancellationToken>()).Returns("weather.clear");
+        _holidayProvider.GetUpcomingHolidayAsync("US", Arg.Any<DateOnly>(), Arg.Any<CancellationToken>())
+            .Returns(new UpcomingHoliday("Independence Day", IsToday: true));
+
+        var result = await _handler.Handle(request, CancellationToken.None);
+
+        result.AmbientKey.ShouldBe("klacksy.welcome.ambient.holiday_today");
+        result.AmbientHolidayName.ShouldBe("Independence Day");
+    }
+
+    [Test]
+    public async Task Handle_ExplicitCountryConfigOverride_WinsOverTheResolvedCompanyCountry()
+    {
+        var config = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?> { ["Assistant:Ambient:CountryCode"] = "FR" })
+            .Build();
+        _countryResolver.GetDefaultAsync(Arg.Any<CancellationToken>())
+            .Returns(new Countries { Abbreviation = "US" });
+        var request = BuildRequest(latitude: 10.0, longitude: 20.0);
+        _weatherClient.GetWeatherKeyAsync(Arg.Any<double>(), Arg.Any<double>(), Arg.Any<CancellationToken>()).Returns("weather.clear");
+        _holidayProvider.GetUpcomingHolidayAsync("FR", Arg.Any<DateOnly>(), Arg.Any<CancellationToken>())
+            .Returns(new UpcomingHoliday("Bastille Day", IsToday: true));
+
+        var result = await HandlerWith(config).Handle(request, CancellationToken.None);
+
+        result.AmbientHolidayName.ShouldBe("Bastille Day");
+        await _countryResolver.DidNotReceive().GetDefaultAsync(Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task Handle_ExplicitCountryConfigOverride_UnresolvableCode_LogsInformation_ButStillUsesItVerbatim()
+    {
+        var config = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?> { ["Assistant:Ambient:CountryCode"] = "ZZ" })
+            .Build();
+        _countryResolver.ResolveAsync("ZZ", Arg.Any<CancellationToken>()).Returns((Countries?)null);
+        var request = BuildRequest(latitude: 10.0, longitude: 20.0);
+        _weatherClient.GetWeatherKeyAsync(Arg.Any<double>(), Arg.Any<double>(), Arg.Any<CancellationToken>()).Returns("weather.clear");
+        var logger = Substitute.For<ILogger<GetWelcomeQueryHandler>>();
+        var handler = new GetWelcomeQueryHandler(
+            _suggestionsRanker, _weatherClient, _companyLocationProvider, _onboardingService, _holidayProvider,
+            _greetingComposer, config, _welcomeFocusResolver, _companyClock, _countryResolver, logger);
+
+        await handler.Handle(request, CancellationToken.None);
+
+        await _holidayProvider.Received(1).GetUpcomingHolidayAsync("ZZ", Arg.Any<DateOnly>(), Arg.Any<CancellationToken>());
+        logger.Received().Log(
+            LogLevel.Information,
+            Arg.Any<EventId>(),
+            Arg.Any<object>(),
+            Arg.Any<Exception?>(),
+            Arg.Any<Func<object, Exception?, string>>());
+    }
+
+    [Test]
+    public async Task Handle_ExplicitCountryConfigOverride_ResolvableCode_LogsNothing()
+    {
+        var config = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?> { ["Assistant:Ambient:CountryCode"] = "FR" })
+            .Build();
+        _countryResolver.ResolveAsync("FR", Arg.Any<CancellationToken>()).Returns(new Countries { Abbreviation = "FR" });
+        var request = BuildRequest(latitude: 10.0, longitude: 20.0);
+        _weatherClient.GetWeatherKeyAsync(Arg.Any<double>(), Arg.Any<double>(), Arg.Any<CancellationToken>()).Returns("weather.clear");
+        var logger = Substitute.For<ILogger<GetWelcomeQueryHandler>>();
+        var handler = new GetWelcomeQueryHandler(
+            _suggestionsRanker, _weatherClient, _companyLocationProvider, _onboardingService, _holidayProvider,
+            _greetingComposer, config, _welcomeFocusResolver, _companyClock, _countryResolver, logger);
+
+        await handler.Handle(request, CancellationToken.None);
+
+        logger.DidNotReceive().Log(
+            LogLevel.Information,
+            Arg.Any<EventId>(),
+            Arg.Any<object>(),
+            Arg.Any<Exception?>(),
+            Arg.Any<Func<object, Exception?, string>>());
+    }
+
+    [Test]
+    public async Task Handle_NoCountryConfiguredAndNoneResolved_LeavesAmbientEmpty_WithoutAHardcodedFallback()
+    {
+        var request = BuildRequest(latitude: 10.0, longitude: 20.0);
+        _weatherClient.GetWeatherKeyAsync(Arg.Any<double>(), Arg.Any<double>(), Arg.Any<CancellationToken>()).Returns("weather.clear");
+
+        var result = await _handler.Handle(request, CancellationToken.None);
+
+        result.AmbientKey.ShouldBe(string.Empty);
+        await _holidayProvider.Received(1).GetUpcomingHolidayAsync(string.Empty, Arg.Any<DateOnly>(), Arg.Any<CancellationToken>());
     }
 
     [Test]

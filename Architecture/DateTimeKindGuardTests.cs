@@ -42,9 +42,6 @@ public class DateTimeKindGuardTests
     private static readonly IReadOnlyDictionary<string, (int Count, string Reason)> AllowedOccurrences =
         new Dictionary<string, (int, string)>
         {
-            ["Domain/Services/Holidays/HolidaysListCalculator.cs"] =
-                (1, "Only the .Year int is read. Around New Year local .Year is more correct than " +
-                    "UtcNow.Year for a CH user, so switching would be a regression."),
             ["Infrastructure/Persistence/Seed/FakeDataSeed.cs"] =
                 (1, "Only the .Year int is read and passed as a seed generation parameter; no DateTime " +
                     "value reaches a column.")

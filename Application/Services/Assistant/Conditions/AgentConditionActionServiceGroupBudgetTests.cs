@@ -50,6 +50,7 @@ public class AgentConditionActionServiceGroupBudgetTests
 
     private FakeAgentConditionRepository _repository = null!;
     private SettableTimeProvider _timeProvider = null!;
+    private FixedCompanyClock _companyClock = null!;
     private IAgentConditionLedgerService _ledger = null!;
     private IProactiveGovernanceResolver _governance = null!;
     private IQuietWindowService _quietWindow = null!;
@@ -63,6 +64,7 @@ public class AgentConditionActionServiceGroupBudgetTests
     {
         _repository = new FakeAgentConditionRepository();
         _timeProvider = new SettableTimeProvider(NowUtc);
+        _companyClock = new FixedCompanyClock(NowUtc);
         _ledger = new AgentConditionLedgerService(
             _repository, _timeProvider, NullLogger<AgentConditionLedgerService>.Instance);
 
@@ -362,6 +364,7 @@ public class AgentConditionActionServiceGroupBudgetTests
             _skillExecutor,
             _reporter,
             _timeProvider,
+            _companyClock,
             NullLogger<AgentConditionActionService>.Instance)
             .RunAsync(CancellationToken.None);
 

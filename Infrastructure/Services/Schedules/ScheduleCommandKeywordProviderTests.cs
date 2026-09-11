@@ -26,7 +26,7 @@ public class ScheduleCommandKeywordProviderTests
     {
         _settingsValues.Clear();
         _settingsReader = Substitute.For<ISettingsReader>();
-        _settingsReader.GetSettingsByTypesAsync(Arg.Any<IEnumerable<string>>())
+        _settingsReader.GetSettingsByTypesAsync(Arg.Any<IEnumerable<string>>(), Arg.Any<CancellationToken>())
             .Returns(_ => (IReadOnlyDictionary<string, string>)new Dictionary<string, string>(_settingsValues));
         _logger = Substitute.For<ILogger<ScheduleCommandKeywordProvider>>();
         _provider = new ScheduleCommandKeywordProvider(_settingsReader, _logger);

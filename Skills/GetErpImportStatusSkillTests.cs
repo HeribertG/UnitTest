@@ -13,6 +13,7 @@ using Klacks.Api.Domain.Interfaces.Settings;
 using Klacks.Api.Domain.Models.Assistant;
 using Klacks.Api.Infrastructure.Mediator;
 using Klacks.UnitTest.TestHelpers;
+using Microsoft.Extensions.Logging.Abstractions;
 using SettingsModel = Klacks.Api.Domain.Models.Settings.Settings;
 
 namespace Klacks.UnitTest.Skills;
@@ -40,7 +41,8 @@ public class GetErpImportStatusSkillTests
             .Returns(EmptyFiles());
         var settingsReader = Substitute.For<ISettingsReader>();
         var companyClock = new FixedCompanyClock(DateTimeOffset.UtcNow, TimeZoneInfo.Utc);
-        var skill = new GetErpImportStatusSkill(mediator, settingsReader, companyClock);
+        var skill = new GetErpImportStatusSkill(
+            mediator, settingsReader, companyClock, NullLogger<GetErpImportStatusSkill>.Instance);
 
         var result = await skill.ExecuteAsync(Ctx(), new Dictionary<string, object>());
 
@@ -72,7 +74,8 @@ public class GetErpImportStatusSkillTests
         settingsReader.GetSetting(ErpImportSettingsTypes.NextRunUtc)
             .Returns(new SettingsModel { Type = ErpImportSettingsTypes.NextRunUtc, Value = new DateTime(2026, 7, 4, 10, 0, 0, DateTimeKind.Utc).ToString("O") });
         var companyClock = new FixedCompanyClock(DateTimeOffset.UtcNow, TimeZoneInfo.Utc);
-        var skill = new GetErpImportStatusSkill(mediator, settingsReader, companyClock);
+        var skill = new GetErpImportStatusSkill(
+            mediator, settingsReader, companyClock, NullLogger<GetErpImportStatusSkill>.Instance);
 
         var result = await skill.ExecuteAsync(Ctx(), new Dictionary<string, object>());
 
@@ -91,7 +94,8 @@ public class GetErpImportStatusSkillTests
             .Returns(EmptyFiles());
         var settingsReader = Substitute.For<ISettingsReader>();
         var companyClock = new FixedCompanyClock(DateTimeOffset.UtcNow, TimeZoneInfo.FindSystemTimeZoneById("Asia/Tokyo"));
-        var skill = new GetErpImportStatusSkill(mediator, settingsReader, companyClock);
+        var skill = new GetErpImportStatusSkill(
+            mediator, settingsReader, companyClock, NullLogger<GetErpImportStatusSkill>.Instance);
 
         var result = await skill.ExecuteAsync(Ctx(), new Dictionary<string, object>());
 

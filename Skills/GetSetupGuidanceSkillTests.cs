@@ -20,6 +20,7 @@ using Klacks.Api.Domain.Interfaces.Settings;
 using Klacks.Api.Domain.Models.Assistant;
 using Klacks.Api.Infrastructure.Mediator;
 using Klacks.UnitTest.TestHelpers;
+using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Klacks.UnitTest.Skills;
 
@@ -56,7 +57,9 @@ public class GetSetupGuidanceSkillTests
         StubDropPoint(null);
         StubState(hasOrders: false, hasShifts: false, hasWork: false);
 
-        _sut = new GetSetupGuidanceSkill(_mediator, _activityProbe, _objectStorageService, _settingsReader, _companyClock);
+        _sut = new GetSetupGuidanceSkill(
+            _mediator, _activityProbe, _objectStorageService, _settingsReader, _companyClock,
+            NullLogger<GetSetupGuidanceSkill>.Instance);
     }
 
     private void StubState(bool hasOrders, bool hasShifts, bool hasWork) =>

@@ -183,7 +183,7 @@ public class CapabilityLearnerTests
     public async Task AnExceptionAfterTheInsert_StillWithdrawsTheRecipe()
     {
         _refresher
-            .RefreshAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .RefreshAndWaitForIndexAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
             .Returns<Task>(_ => throw new InvalidOperationException("index sync exploded"));
 
         var outcome = await _learner.LearnAsync(Cluster(), [Skill]);
@@ -201,7 +201,7 @@ public class CapabilityLearnerTests
     {
         using var source = new CancellationTokenSource();
         _refresher
-            .RefreshAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .RefreshAndWaitForIndexAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
             .Returns<Task>(_ =>
             {
                 source.Cancel();

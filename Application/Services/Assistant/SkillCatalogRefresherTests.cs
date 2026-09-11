@@ -1,7 +1,9 @@
 // Copyright (c) Heribert Gasparoli Private. All rights reserved.
 
 /// <summary>
-/// Tests for SkillCatalogRefresher — cache/registry/index refresh order and sync-failure isolation.
+/// Tests for SkillCatalogRefresher — cache and registry refresh first, then the knowledge index sync
+/// is either only requested (RefreshAsync) or awaited (RefreshAndWaitForIndexAsync). Sync failure
+/// isolation lives in the scheduler and is covered by KnowledgeIndexSyncSchedulerTests.
 /// </summary>
 namespace Klacks.UnitTest.Application.Services.Assistant;
 
@@ -16,9 +18,11 @@ using Shouldly;
 [TestFixture]
 public class SkillCatalogRefresherTests
 {
+    private const string Reason = "creating skill 'x'";
+
     private ISkillCacheService _cache = null!;
     private SkillRegistryInitializer _initializer = null!;
-    private IKnowledgeIndexSynchronizer _knowledgeSync = null!;
+    private IKnowledgeIndexSyncScheduler _scheduler = null!;
     private SkillCatalogRefresher _refresher = null!;
 
     [SetUp]
@@ -29,34 +33,52 @@ public class SkillCatalogRefresherTests
             Substitute.For<IAgentSkillRepository>(),
             Substitute.For<ISkillRegistry>(),
             Substitute.For<ILogger<SkillRegistryInitializer>>());
-        _knowledgeSync = Substitute.For<IKnowledgeIndexSynchronizer>();
+        _scheduler = Substitute.For<IKnowledgeIndexSyncScheduler>();
 
-        _refresher = new SkillCatalogRefresher(
-            _cache, _initializer, _knowledgeSync, Substitute.For<ILogger<SkillCatalogRefresher>>());
+        _refresher = new SkillCatalogRefresher(_cache, _initializer, _scheduler);
     }
 
     [Test]
-    public async Task RefreshAsync_RefreshesCacheRegistryAndIndexInOrder()
+    public async Task RefreshAsync_RefreshesCacheAndRegistryThenRequestsTheIndexSync()
     {
-        await _refresher.RefreshAsync("creating skill 'x'", CancellationToken.None);
+        await _refresher.RefreshAsync(Reason, CancellationToken.None);
 
         Received.InOrder(() =>
         {
             _cache.InvalidateCache();
             _initializer.InitializeAsync(Arg.Any<CancellationToken>());
-            _knowledgeSync.SyncAsync(Arg.Any<CancellationToken>());
+            _scheduler.Request(Reason);
         });
+        await _scheduler.DidNotReceive().RunNowAsync(Arg.Any<string>(), Arg.Any<CancellationToken>());
     }
 
     [Test]
-    public async Task RefreshAsync_IndexSyncFailure_DoesNotThrow()
+    public async Task RefreshAndWaitForIndexAsync_RefreshesCacheAndRegistryThenAwaitsTheIndexSync()
     {
-        _knowledgeSync.SyncAsync(Arg.Any<CancellationToken>())
-            .Returns<Task>(_ => throw new InvalidOperationException("embedding provider down"));
+        using var cancellation = new CancellationTokenSource();
 
-        await Should.NotThrowAsync(() => _refresher.RefreshAsync("updating skill 'x'", CancellationToken.None));
+        await _refresher.RefreshAndWaitForIndexAsync(Reason, cancellation.Token);
 
-        _cache.Received(1).InvalidateCache();
-        await _initializer.Received(1).InitializeAsync(Arg.Any<CancellationToken>());
+        Received.InOrder(() =>
+        {
+            _cache.InvalidateCache();
+            _initializer.InitializeAsync(Arg.Any<CancellationToken>());
+            _scheduler.RunNowAsync(Reason, cancellation.Token);
+        });
+        _scheduler.DidNotReceive().Request(Arg.Any<string>());
+    }
+
+    [Test]
+    public async Task RefreshAndWaitForIndexAsync_ReturnsOnlyOnceTheSchedulerReportsTheSyncDone()
+    {
+        var sync = new TaskCompletionSource();
+        _scheduler.RunNowAsync(Arg.Any<string>(), Arg.Any<CancellationToken>()).Returns(sync.Task);
+
+        var refresh = _refresher.RefreshAndWaitForIndexAsync(Reason, CancellationToken.None);
+        await Task.Delay(TimeSpan.FromMilliseconds(50));
+        refresh.IsCompleted.ShouldBeFalse();
+
+        sync.SetResult();
+        await refresh.WaitAsync(TimeSpan.FromSeconds(5));
     }
 }

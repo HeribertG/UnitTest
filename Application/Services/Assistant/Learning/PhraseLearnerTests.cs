@@ -116,6 +116,28 @@ public class PhraseLearnerTests
             Arg.Any<CancellationToken>());
     }
 
+    // The probes read the knowledge index. A refresh that only schedules the sync would let them judge
+    // the index as it was before the wording was written, so the learner must wait for the sync.
+    [Test]
+    public async Task TheProbe_RunsOnlyAfterTheIndexSyncWasAwaited()
+    {
+        GivenPhrases("umsatz pro kunde");
+        GivenProbe(Excerpt, true);
+        GivenProbe("umsatz pro kunde", true);
+        var order = new List<string>();
+        _refresher
+            .When(r => r.RefreshAndWaitForIndexAsync(Arg.Any<string>(), Arg.Any<CancellationToken>()))
+            .Do(_ => order.Add("refresh"));
+        _oracle
+            .When(o => o.ProbeAsync(Excerpt, Arg.Any<string?>(), Target, Arg.Any<CancellationToken>()))
+            .Do(_ => order.Add("probe"));
+
+        await _learner.LearnAsync(Cluster(), Target);
+
+        order.Take(2).ShouldBe(["refresh", "probe"]);
+        await _refresher.DidNotReceive().RefreshAsync(Arg.Any<string>(), Arg.Any<CancellationToken>());
+    }
+
     // Without the rollback a rejected wording would stay in the index for good: it was written before it
     // was judged, because there is no other way to judge it.
     [Test]
@@ -193,7 +215,7 @@ public class PhraseLearnerTests
 
         outcome.Learned.ShouldBeFalse();
         outcome.Error.ShouldNotBeNull().ShouldContain("already indexed");
-        await _refresher.DidNotReceive().RefreshAsync(Arg.Any<string>(), Arg.Any<CancellationToken>());
+        await _refresher.DidNotReceive().RefreshAndWaitForIndexAsync(Arg.Any<string>(), Arg.Any<CancellationToken>());
     }
 
     [Test]

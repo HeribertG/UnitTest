@@ -128,7 +128,7 @@ public class SkillDescriptionSharpenerTests
         _skill.Description.ShouldBe(Before);
         proposal.Status.ShouldBe(ProposedChangeStatuses.BlockedRegression);
         proposal.Justification.ShouldContain("create_client");
-        await _refresher.Received(2).RefreshAsync(Arg.Any<string>(), Arg.Any<CancellationToken>());
+        await _refresher.Received(2).RefreshAndWaitForIndexAsync(Arg.Any<string>(), Arg.Any<CancellationToken>());
     }
 
     // A case that was red before anything was touched is not this proposal's doing.
@@ -180,7 +180,7 @@ public class SkillDescriptionSharpenerTests
         _skill.Description.ShouldBe(Before);
         proposal.Status.ShouldBe(ProposedChangeStatuses.Pending);
         proposal.ReviewedAt.ShouldBeNull();
-        await _refresher.Received(2).RefreshAsync(Arg.Any<string>(), Arg.Any<CancellationToken>());
+        await _refresher.Received(2).RefreshAndWaitForIndexAsync(Arg.Any<string>(), Arg.Any<CancellationToken>());
     }
 
     // One unreachable probe must not cost the proposals queued behind it.
@@ -228,7 +228,7 @@ public class SkillDescriptionSharpenerTests
 
         await _sharpener.RunAsync();
 
-        await _refresher.Received(1).RefreshAsync(Arg.Any<string>(), Arg.Any<CancellationToken>());
+        await _refresher.Received(1).RefreshAndWaitForIndexAsync(Arg.Any<string>(), Arg.Any<CancellationToken>());
     }
 
     // A restore that fails must not pass silently: the never-judged description would stay live and

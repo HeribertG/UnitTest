@@ -2,16 +2,22 @@
 
 /// <summary>
 /// Unit tests for the language config endpoint: default language resolution from the
-/// DEFAULT_LANGUAGE setting with validation against the supported languages and fallback to "en".
+/// DEFAULT_LANGUAGE setting with validation against the supported languages and fallback to "en",
+/// plus the admin-only knowledge index sync status endpoint.
 /// </summary>
 
+using System.Reflection;
 using Klacks.Api.Application.DTOs.Config;
 using Klacks.Api.Application.Interfaces.Plugins;
 using Klacks.Api.Application.Interfaces.Settings;
 using Klacks.Api.Domain.Common;
 using Klacks.Api.Domain.Constants;
 using Klacks.Api.Domain.Interfaces.Settings;
+using Klacks.Api.KnowledgeIndex.Application.Interfaces;
+using Klacks.Api.KnowledgeIndex.Domain;
 using Klacks.Api.Presentation.Controllers.UserBackend;
+using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
@@ -29,6 +35,7 @@ public class LanguageConfigControllerTests
     private IFeaturePluginService _featurePluginService = null!;
     private IMarketplaceClientService _marketplaceClient = null!;
     private ISettingsReader _settingsReader = null!;
+    private IKnowledgeIndexSyncScheduler _knowledgeIndexSyncScheduler = null!;
     private CapturingLogger _logger = null!;
 
     [SetUp]
@@ -44,6 +51,7 @@ public class LanguageConfigControllerTests
         _settingsReader = Substitute.For<ISettingsReader>();
         _settingsReader.GetSetting(Arg.Any<string>()).Returns((SettingsModel?)null);
 
+        _knowledgeIndexSyncScheduler = Substitute.For<IKnowledgeIndexSyncScheduler>();
         _logger = new CapturingLogger();
     }
 
@@ -108,6 +116,31 @@ public class LanguageConfigControllerTests
         _logger.Warnings.ShouldBe(0);
     }
 
+    [Test]
+    public void GetKnowledgeIndexSyncStatus_ReturnsTheSchedulerStatus()
+    {
+        var status = new KnowledgeIndexSyncStatus(
+            true, true, null, null, "installing language plugin 'pl'", null);
+        _knowledgeIndexSyncScheduler.Status.Returns(status);
+        var controller = CreateController();
+
+        var result = controller.GetKnowledgeIndexSyncStatus();
+
+        result.Result.ShouldBeOfType<OkObjectResult>().Value.ShouldBe(status);
+    }
+
+    [Test]
+    public void GetKnowledgeIndexSyncStatus_IsAdminOnlyAndPinsTheJwtScheme()
+    {
+        var authorize = typeof(LanguageConfigController)
+            .GetMethod(nameof(LanguageConfigController.GetKnowledgeIndexSyncStatus))!
+            .GetCustomAttribute<AuthorizeAttribute>();
+
+        authorize.ShouldNotBeNull();
+        authorize!.AuthenticationSchemes.ShouldBe(JwtBearerDefaults.AuthenticationScheme);
+        authorize.Roles.ShouldBe(Roles.Admin);
+    }
+
     private void StubDefaultLanguageSetting(string value)
     {
         _settingsReader.GetSetting(SettingKeys.DefaultLanguage)
@@ -126,6 +159,7 @@ public class LanguageConfigControllerTests
             _featurePluginService,
             _marketplaceClient,
             _settingsReader,
+            _knowledgeIndexSyncScheduler,
             _logger);
     }
 

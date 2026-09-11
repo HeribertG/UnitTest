@@ -3,12 +3,14 @@
 /// <summary>
 /// Guards the startup report of the active retrieval stack. A silent fallback to a remote embedding
 /// provider changes retrieval quality without any visible signal, which once invalidated a whole
-/// measurement round, so the warning must not disappear in a refactoring.
+/// measurement round, so the warning must not disappear in a refactoring. Also pins that the startup
+/// sync goes through the single-flight scheduler and is awaited.
 /// </summary>
 
 using Klacks.Api.KnowledgeIndex.Application.Constants;
 using Klacks.Api.KnowledgeIndex.Application.Interfaces;
 using Klacks.Api.KnowledgeIndex.Application.Services;
+using Klacks.Api.KnowledgeIndex.Domain;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 
@@ -36,14 +38,37 @@ public class KnowledgeIndexStartupServiceStackReportTests
         recorder.Infos.ShouldContain(m => m.Contains("Retrieval stack"));
     }
 
-    private static async Task<LogRecorder> RunWithEmbeddingSpaceAsync(string embeddingSpaceId)
+    [Test]
+    public async Task StartAsync_RunsTheSyncThroughTheSchedulerAndWaitsForIt()
+    {
+        var scheduler = new StubScheduler(succeeds: true);
+
+        await RunWithEmbeddingSpaceAsync(
+            KnowledgeIndexConstants.LocalEmbeddingSpacePrefix + "multilingual-e5-small@384", scheduler);
+
+        scheduler.RunNowReasons.ShouldBe([KnowledgeIndexSyncConstants.StartupReason]);
+        scheduler.Requests.ShouldBeEmpty();
+    }
+
+    [Test]
+    public async Task StartAsync_WarnsWithTheError_WhenTheStartupSyncFailed()
+    {
+        var recorder = await RunWithEmbeddingSpaceAsync(
+            KnowledgeIndexConstants.LocalEmbeddingSpacePrefix + "multilingual-e5-small@384",
+            new StubScheduler(succeeds: false));
+
+        recorder.Warnings.ShouldContain(m => m.Contains("did not complete") && m.Contains(StubScheduler.FailureMessage));
+    }
+
+    private static async Task<LogRecorder> RunWithEmbeddingSpaceAsync(
+        string embeddingSpaceId, StubScheduler? scheduler = null)
     {
         var services = new ServiceCollection();
         services.AddScoped<IEmbeddingProvider>(_ => new StubEmbeddingProvider(embeddingSpaceId));
-        services.AddScoped<IKnowledgeIndexSynchronizer, StubSynchronizer>();
 
         var recorder = new LogRecorder();
-        var sut = new KnowledgeIndexStartupService(services.BuildServiceProvider(), recorder);
+        var sut = new KnowledgeIndexStartupService(
+            services.BuildServiceProvider(), scheduler ?? new StubScheduler(succeeds: true), recorder);
 
         await sut.StartAsync(CancellationToken.None);
 
@@ -68,9 +93,33 @@ public class KnowledgeIndexStartupServiceStackReportTests
             Task.FromResult(Array.Empty<float>());
     }
 
-    private sealed class StubSynchronizer : IKnowledgeIndexSynchronizer
+    private sealed class StubScheduler : IKnowledgeIndexSyncScheduler
     {
-        public Task SyncAsync(CancellationToken cancellationToken) => Task.CompletedTask;
+        public const string FailureMessage = "embedding provider down";
+
+        private static readonly DateTimeOffset RunEnd = new(2026, 9, 11, 8, 0, 0, TimeSpan.Zero);
+
+        private readonly bool _succeeds;
+
+        public StubScheduler(bool succeeds) => _succeeds = succeeds;
+
+        public List<string> RunNowReasons { get; } = [];
+
+        public List<string> Requests { get; } = [];
+
+        public KnowledgeIndexSyncStatus Status { get; private set; } =
+            new(false, false, null, null, null, null);
+
+        public void Request(string reason) => Requests.Add(reason);
+
+        public Task RunNowAsync(string reason, CancellationToken cancellationToken)
+        {
+            RunNowReasons.Add(reason);
+            Status = _succeeds
+                ? new KnowledgeIndexSyncStatus(false, false, RunEnd, null, reason, null)
+                : new KnowledgeIndexSyncStatus(false, false, null, RunEnd, reason, FailureMessage);
+            return Task.CompletedTask;
+        }
     }
 
     private sealed class LogRecorder : ILogger<KnowledgeIndexStartupService>

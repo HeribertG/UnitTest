@@ -9,6 +9,7 @@
 using Klacks.Api.Application.Services.Assistant.Triggers;
 using Klacks.Api.Domain.Constants;
 using Klacks.Api.Domain.DTOs.Assistant;
+using Klacks.UnitTest.TestHelpers;
 using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Klacks.UnitTest.Services.Assistant;
@@ -28,9 +29,8 @@ public class ClientMissingCoreDataDetectorTests
 
     private ClientMissingCoreDataDetector CreateSut(DateOnly today)
     {
-        var tp = Substitute.For<TimeProvider>();
-        tp.GetUtcNow().Returns(new DateTimeOffset(today.ToDateTime(TimeOnly.MinValue, DateTimeKind.Utc)));
-        return new ClientMissingCoreDataDetector(_repo, NullLogger<ClientMissingCoreDataDetector>.Instance, tp);
+        var clock = new FixedCompanyClock(new DateTimeOffset(today.ToDateTime(TimeOnly.MinValue, DateTimeKind.Utc)));
+        return new ClientMissingCoreDataDetector(_repo, NullLogger<ClientMissingCoreDataDetector>.Instance, clock);
     }
 
     private void StubStatuses(params ClientCoreDataStatus[] statuses)
@@ -115,5 +115,24 @@ public class ClientMissingCoreDataDetectorTests
         var events = await _sut.DetectAsync();
 
         Assert.That(events, Has.Count.EqualTo(ClientMissingCoreDataDetector.MaxFindingsPerTick));
+    }
+
+    [Test]
+    public async Task DetectAsync_AucklandCompanyDayAcrossUtcMidnight_UsesCompanyDayNotUtcDay()
+    {
+        // UTC instant 2026-06-27T23:30Z is still 27.06 in UTC but already 28.06 11:30 in Pacific/Auckland
+        // (+12:00, no DST in the southern-hemisphere winter). Passing the company day, not the UTC day,
+        // as the reference date is what this test pins.
+        var instant = DateTimeOffset.Parse(
+            "2026-06-27T23:30:00Z", System.Globalization.CultureInfo.InvariantCulture,
+            System.Globalization.DateTimeStyles.AdjustToUniversal);
+        var clock = new FixedCompanyClock(instant, TimeZoneInfo.FindSystemTimeZoneById("Pacific/Auckland"));
+        _sut = new ClientMissingCoreDataDetector(_repo, NullLogger<ClientMissingCoreDataDetector>.Instance, clock);
+        StubStatuses();
+
+        await _sut.DetectAsync();
+
+        await _repo.Received(1).GetActiveClientsWithMissingCoreDataAsync(
+            new DateOnly(2026, 6, 28), ClientMissingCoreDataDetector.MaxFindingsPerTick, Arg.Any<CancellationToken>());
     }
 }

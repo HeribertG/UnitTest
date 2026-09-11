@@ -39,7 +39,10 @@ public class OrderSupersessionServiceTests
         _unitOfWork.ExecuteInTransactionAsync(Arg.Any<Func<Task<bool>>>())
             .Returns(ci => ci.Arg<Func<Task<bool>>>()());
 
-        _service = new OrderSupersessionService(_shiftRepository, _workRepository, _clientRepository, _triggerService, _groupScopeReader, _unitOfWork, NullLogger<OrderSupersessionService>.Instance);
+        _service = new OrderSupersessionService(
+            _shiftRepository, _workRepository, _clientRepository, _triggerService, _groupScopeReader, _unitOfWork,
+            new FixedCompanyClock(new DateTimeOffset(2026, 8, 15, 0, 0, 0, TimeSpan.Zero)),
+            NullLogger<OrderSupersessionService>.Instance);
     }
 
     private static Shift SealedOrder() => new()
@@ -98,7 +101,7 @@ public class OrderSupersessionServiceTests
 
         await _service.HandleAsync(sealedOrder, ChangedOrder(), ClientId);
 
-        await _shiftRepository.Received(1).PutWithSealedOrderHandling(Arg.Is<Shift>(s => s.Id == sealedOrder.Id && s.UntilDate == DateOnly.FromDateTime(DateTime.UtcNow)));
+        await _shiftRepository.Received(1).PutWithSealedOrderHandling(Arg.Is<Shift>(s => s.Id == sealedOrder.Id && s.UntilDate == new DateOnly(2026, 8, 15)));
     }
 
     [Test]

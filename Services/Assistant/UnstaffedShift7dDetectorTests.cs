@@ -28,7 +28,8 @@ public class UnstaffedShift7dDetectorTests
     {
         _repo = Substitute.For<IShiftScheduleRepository>();
         _groupScopeReader = ShiftGroupScopeReaderStub.WithoutAnyGroups();
-        _sut = new UnstaffedShift7dDetector(_repo, _groupScopeReader, NullLogger<UnstaffedShift7dDetector>.Instance);
+        _sut = new UnstaffedShift7dDetector(
+            _repo, _groupScopeReader, new FixedCompanyClock(DateTimeOffset.UtcNow), NullLogger<UnstaffedShift7dDetector>.Instance);
     }
 
     private static ShiftDayAssignment MakeAssignment(DateOnly date, int sum, int quantity, Guid? id = null) => new()
@@ -185,4 +186,24 @@ public class UnstaffedShift7dDetectorTests
     private void StubAssignments(params ShiftDayAssignment[] assignments) =>
         _repo.GetShiftScheduleAsync(Arg.Any<ShiftScheduleFilter>(), Arg.Any<CancellationToken>())
             .Returns((assignments.ToList(), assignments.Length));
+
+    [Test]
+    public async Task DetectAsync_AucklandCompanyDayAcrossUtcMidnight_UsesCompanyDayNotUtcDay()
+    {
+        // UTC instant 2026-06-27T23:30Z is still 27.06 in UTC but already 28.06 11:30 in Pacific/Auckland
+        // (+12:00, no DST in the southern-hemisphere winter). An unstaffed slot on 2026-06-30 is 2 days
+        // out under the (correct) company day but 3 days out under the (wrong) UTC day.
+        var instant = DateTimeOffset.Parse(
+            "2026-06-27T23:30:00Z", System.Globalization.CultureInfo.InvariantCulture,
+            System.Globalization.DateTimeStyles.AdjustToUniversal);
+        var clock = new FixedCompanyClock(instant, TimeZoneInfo.FindSystemTimeZoneById("Pacific/Auckland"));
+        _sut = new UnstaffedShift7dDetector(_repo, _groupScopeReader, clock, NullLogger<UnstaffedShift7dDetector>.Instance);
+        StubAssignments(MakeAssignment(new DateOnly(2026, 6, 30), sum: 0, quantity: 1));
+
+        var events = await _sut.DetectAsync();
+
+        var unstaffed = events.Single() as UnstaffedShiftTriggerEvent;
+        Assert.That(unstaffed!.DaysUntil, Is.EqualTo(2),
+            "Company day (Pacific/Auckland) is already 28.06 at this UTC instant; the detector must not fall back to the UTC day 27.06.");
+    }
 }

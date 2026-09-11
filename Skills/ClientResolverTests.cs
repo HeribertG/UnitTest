@@ -190,7 +190,8 @@ public class ClientResolverTests
                 groupVisibility,
                 userService,
                 Substitute.For<ILogger<ClientGroupFilterService>>()),
-            fuzzySearchService);
+            fuzzySearchService,
+            new Klacks.UnitTest.TestHelpers.FixedCompanyClock(DateTimeOffset.UtcNow));
 
         var (client, error) = await ClientResolver.ResolveByNameAsync(
             searchRepository, _clientRepository, "Petra", "Steinmann", null, CancellationToken.None);

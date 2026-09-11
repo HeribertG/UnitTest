@@ -13,6 +13,7 @@ using Klacks.Api.Domain.Interfaces.Assistant;
 using Klacks.Api.Domain.Interfaces.Settings;
 using Klacks.Api.Domain.Models.Associations;
 using Klacks.Api.Domain.Models.Schedules;
+using Klacks.UnitTest.TestHelpers;
 using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Klacks.UnitTest.Services.Assistant;
@@ -52,10 +53,9 @@ public class PeriodCloseDueDetectorTests
 
     private PeriodCloseDueDetector CreateSut(DateOnly today)
     {
-        var tp = Substitute.For<TimeProvider>();
-        tp.GetUtcNow().Returns(new DateTimeOffset(today.ToDateTime(TimeOnly.MinValue, DateTimeKind.Utc)));
+        var clock = new FixedCompanyClock(new DateTimeOffset(today.ToDateTime(TimeOnly.MinValue, DateTimeKind.Utc)));
         return new PeriodCloseDueDetector(_groupRepository, _sealedDayRepository, _weekConfiguration,
-            _activityProbe, NullLogger<PeriodCloseDueDetector>.Instance, tp);
+            _activityProbe, NullLogger<PeriodCloseDueDetector>.Instance, clock);
     }
 
     private void StubGroups(List<Group> groups)
@@ -184,6 +184,32 @@ public class PeriodCloseDueDetectorTests
         var events = await _sut.DetectAsync();
 
         Assert.That(events, Is.Empty);
+    }
+
+    [Test]
+    public async Task DetectAsync_AucklandCompanyDayAcrossUtcMidnight_UsesCompanyDayNotUtcDay()
+    {
+        // UTC instant 2026-06-27T23:30Z is still 27.06 in UTC but already 28.06 11:30 in Pacific/Auckland
+        // (+12:00, no DST in the southern-hemisphere winter). Monthly period end is 2026-06-30 either way,
+        // so DaysUntilDue distinguishes the two: 3 under (wrong) UTC day, 2 under the (correct) company day.
+        var group = MakeGroup(PaymentInterval.Monthly);
+        StubGroups(new List<Group> { group });
+        _sealedDayRepository.GetRangeAsync(Arg.Any<DateOnly>(), Arg.Any<DateOnly>(), Arg.Any<Guid>(), Arg.Any<CancellationToken>())
+            .Returns(new List<SealedDay>());
+        var instant = DateTimeOffset.Parse(
+            "2026-06-27T23:30:00Z", System.Globalization.CultureInfo.InvariantCulture,
+            System.Globalization.DateTimeStyles.AdjustToUniversal);
+        var clock = new FixedCompanyClock(instant, TimeZoneInfo.FindSystemTimeZoneById("Pacific/Auckland"));
+        _sut = new PeriodCloseDueDetector(_groupRepository, _sealedDayRepository, _weekConfiguration,
+            _activityProbe, NullLogger<PeriodCloseDueDetector>.Instance, clock);
+
+        var events = await _sut.DetectAsync();
+
+        Assert.That(events, Has.Count.EqualTo(1));
+        var evt = (PeriodCloseDueTriggerEvent)events[0];
+        Assert.That(evt.PeriodEndDate, Is.EqualTo(new DateOnly(2026, 6, 30)));
+        Assert.That(evt.DaysUntilDue, Is.EqualTo(2),
+            "Company day (Pacific/Auckland) is already 28.06 at this UTC instant; the detector must not fall back to the UTC day 27.06.");
     }
 
     [Test]

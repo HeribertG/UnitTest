@@ -14,6 +14,7 @@ public class DomainServiceFunctionalTests
     private IShiftSortingService _sortingService;
     private IShiftStatusFilterService _statusFilterService;
     private List<Shift> _testShifts;
+    private DateOnly _today;
 
     [SetUp]
     public void SetUp()
@@ -22,6 +23,7 @@ public class DomainServiceFunctionalTests
         _searchService = new ShiftSearchService();
         _sortingService = new ShiftSortingService();
         _statusFilterService = new ShiftStatusFilterService();
+        _today = DateOnly.FromDateTime(DateTime.UtcNow);
 
         // Create test data in memory
         _testShifts = CreateTestData();
@@ -29,7 +31,7 @@ public class DomainServiceFunctionalTests
 
     private List<Shift> CreateTestData()
     {
-        var today = DateOnly.FromDateTime(DateTime.Now);
+        var today = _today;
         return new List<Shift>
         {
             new Shift 
@@ -82,7 +84,7 @@ public class DomainServiceFunctionalTests
         var query = _testShifts.AsQueryable();
 
         // Act
-        var result = _dateRangeFilterService.ApplyDateRangeFilter(query, true, false, false);
+        var result = _dateRangeFilterService.ApplyDateRangeFilter(query, true, false, false, _today);
         var shifts = result.ToList();
 
         // Assert
@@ -275,7 +277,7 @@ public class DomainServiceFunctionalTests
         var query = _testShifts.AsQueryable();
 
         // Act & Assert - Each filter should execute without exceptions
-        var act1 = () => _dateRangeFilterService.ApplyDateRangeFilter(query, true, false, false).ToList();
+        var act1 = () => _dateRangeFilterService.ApplyDateRangeFilter(query, true, false, false, _today).ToList();
         act1.ShouldNotThrow("DateRange filter should execute successfully");
 
         // Use in-memory search logic instead of EF.Functions.Like

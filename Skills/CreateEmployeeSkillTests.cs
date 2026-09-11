@@ -22,6 +22,7 @@ using Klacks.Api.Application.Mappers;
 using Klacks.Api.Infrastructure.Services.Assistant;
 
 using Klacks.UnitTest.Infrastructure.SelfApi;
+using Klacks.UnitTest.TestHelpers;
 
 namespace Klacks.UnitTest.Skills;
 
@@ -69,7 +70,8 @@ public class CreateEmployeeSkillTests
 
         _skill = new CreateEmployeeSkill(
             _clientRepository, _searchRepository, new ClientMapper(), _api.Client, new SelfApiRouteResolver(),
-            _countryResolver, _confirmationStore);
+            _countryResolver, _confirmationStore,
+            new FixedCompanyClock(new DateTimeOffset(2026, 5, 29, 0, 0, 0, TimeSpan.Zero)));
     }
 
     private static SkillExecutionContext Ctx() => new()

@@ -9,6 +9,7 @@ using Klacks.Api.Application.Queries.Assistant;
 using Klacks.Api.Domain.Interfaces.Assistant;
 using Klacks.Api.Domain.Interfaces.Settings;
 using Klacks.Api.Domain.Models.Assistant;
+using Klacks.UnitTest.TestHelpers;
 using Microsoft.Extensions.Configuration;
 using NSubstitute;
 using NUnit.Framework;
@@ -17,6 +18,8 @@ using Shouldly;
 [TestFixture]
 public class GetWelcomeQueryHandlerWeatherFallbackTests
 {
+    private static readonly DateOnly FixedToday = new(2026, 9, 11);
+
     private ISuggestionsRanker _suggestionsRanker = null!;
     private IOpenMeteoClient _weatherClient = null!;
     private ICompanyLocationProvider _companyLocationProvider = null!;
@@ -25,6 +28,7 @@ public class GetWelcomeQueryHandlerWeatherFallbackTests
     private IGreetingComposer _greetingComposer = null!;
     private IConfiguration _configuration = null!;
     private IWelcomeFocusResolver _welcomeFocusResolver = null!;
+    private FixedCompanyClock _companyClock = null!;
     private GetWelcomeQueryHandler _handler = null!;
 
     [SetUp]
@@ -38,7 +42,7 @@ public class GetWelcomeQueryHandlerWeatherFallbackTests
         _companyLocationProvider = Substitute.For<ICompanyLocationProvider>();
         _onboardingService = Substitute.For<IOnboardingService>();
         _holidayProvider = Substitute.For<IPublicHolidayProvider>();
-        _holidayProvider.GetUpcomingHolidayAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
+        _holidayProvider.GetUpcomingHolidayAsync(Arg.Any<string>(), Arg.Any<DateOnly>(), Arg.Any<CancellationToken>())
             .Returns((UpcomingHoliday?)null);
         _greetingComposer = Substitute.For<IGreetingComposer>();
         _greetingComposer.ComposeAsync(Arg.Any<GreetingContext>(), Arg.Any<CancellationToken>())
@@ -47,11 +51,12 @@ public class GetWelcomeQueryHandlerWeatherFallbackTests
         _welcomeFocusResolver = Substitute.For<IWelcomeFocusResolver>();
         _welcomeFocusResolver.ResolveAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
             .Returns((WelcomeFocusResource?)null);
-        _handler = new GetWelcomeQueryHandler(_suggestionsRanker, _weatherClient, _companyLocationProvider, _onboardingService, _holidayProvider, _greetingComposer, _configuration, _welcomeFocusResolver);
+        _companyClock = new FixedCompanyClock(FixedToday.ToDateTime(TimeOnly.MinValue, DateTimeKind.Utc));
+        _handler = new GetWelcomeQueryHandler(_suggestionsRanker, _weatherClient, _companyLocationProvider, _onboardingService, _holidayProvider, _greetingComposer, _configuration, _welcomeFocusResolver, _companyClock);
     }
 
     private GetWelcomeQueryHandler HandlerWith(IConfiguration configuration)
-        => new(_suggestionsRanker, _weatherClient, _companyLocationProvider, _onboardingService, _holidayProvider, _greetingComposer, configuration, _welcomeFocusResolver);
+        => new(_suggestionsRanker, _weatherClient, _companyLocationProvider, _onboardingService, _holidayProvider, _greetingComposer, configuration, _welcomeFocusResolver, _companyClock);
 
     [Test]
     public async Task Handle_RequestHasBrowserCoordinates_UsesThemAndSkipsCompanyFallback()
@@ -109,7 +114,7 @@ public class GetWelcomeQueryHandlerWeatherFallbackTests
     {
         var request = BuildRequest(latitude: 10.0, longitude: 20.0);
         _weatherClient.GetWeatherKeyAsync(Arg.Any<double>(), Arg.Any<double>(), Arg.Any<CancellationToken>()).Returns("weather.clear");
-        _holidayProvider.GetUpcomingHolidayAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
+        _holidayProvider.GetUpcomingHolidayAsync(Arg.Any<string>(), Arg.Any<DateOnly>(), Arg.Any<CancellationToken>())
             .Returns(new UpcomingHoliday("Auffahrt", IsToday: false));
 
         var result = await _handler.Handle(request, CancellationToken.None);

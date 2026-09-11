@@ -14,6 +14,7 @@ using Klacks.Api.Application.Services.Assistant.Triggers;
 using Klacks.Api.Domain.Constants;
 using Klacks.Api.Domain.Interfaces.Email;
 using Klacks.Api.Domain.Models.Email;
+using Klacks.UnitTest.TestHelpers;
 using Microsoft.Extensions.Logging.Abstractions;
 using AppSettings = Klacks.Api.Application.Constants.Settings;
 using SettingsRow = Klacks.Api.Domain.Models.Settings.Settings;
@@ -72,8 +73,7 @@ public class NextPeriodSchedulingDueDetectorTests
 
     private NextPeriodSchedulingDueDetector CreateSut(DateOnly today)
     {
-        var tp = Substitute.For<TimeProvider>();
-        tp.GetUtcNow().Returns(new DateTimeOffset(today.ToDateTime(TimeOnly.MinValue, DateTimeKind.Utc)));
+        var clock = new FixedCompanyClock(new DateTimeOffset(today.ToDateTime(TimeOnly.MinValue, DateTimeKind.Utc)));
         return new NextPeriodSchedulingDueDetector(
             _groupRepository,
             _weekConfiguration,
@@ -89,7 +89,7 @@ public class NextPeriodSchedulingDueDetectorTests
             _settingsReader,
             _receivedEmailRepository,
             NullLogger<NextPeriodSchedulingDueDetector>.Instance,
-            tp);
+            clock);
     }
 
     private void StubKillSwitch(bool active)
@@ -429,6 +429,33 @@ public class NextPeriodSchedulingDueDetectorTests
         var events = await _sut.DetectAsync();
 
         Assert.That(events, Is.Empty);
+    }
+
+    [Test]
+    public async Task DetectAsync_AucklandCompanyDayAcrossUtcMidnight_UsesCompanyDayNotUtcDay()
+    {
+        // UTC instant 2026-06-27T23:30Z is still 27.06 in UTC but already 28.06 11:30 in Pacific/Auckland
+        // (+12:00, no DST in the southern-hemisphere winter). Next period start (2026-07-01) is the same
+        // either way, so DaysUntilStart distinguishes the two: 4 under (wrong) UTC day, 3 under the
+        // (correct) company day.
+        StubGroups(MakeGroup(PaymentInterval.Monthly));
+        var instant = DateTimeOffset.Parse(
+            "2026-06-27T23:30:00Z", System.Globalization.CultureInfo.InvariantCulture,
+            System.Globalization.DateTimeStyles.AdjustToUniversal);
+        var clock = new FixedCompanyClock(instant, TimeZoneInfo.FindSystemTimeZoneById("Pacific/Auckland"));
+        _sut = new NextPeriodSchedulingDueDetector(
+            _groupRepository, _weekConfiguration, _scenarioRepository, _activityProbe,
+            _autoWizardJobRunner, _clientRepository, _shiftScheduleRepository, _autoCommitService,
+            _audienceResolver, _autonomyPreferences, _governanceResolver, _settingsReader,
+            _receivedEmailRepository, NullLogger<NextPeriodSchedulingDueDetector>.Instance, clock);
+
+        var events = await _sut.DetectAsync();
+
+        Assert.That(events, Has.Count.EqualTo(1));
+        var hint = (NextPeriodSchedulingDueTriggerEvent)events[0];
+        Assert.That(hint.PeriodStartDate, Is.EqualTo(new DateOnly(2026, 7, 1)));
+        Assert.That(hint.DaysUntilStart, Is.EqualTo(3),
+            "Company day (Pacific/Auckland) is already 28.06 at this UTC instant; the detector must not fall back to the UTC day 27.06.");
     }
 
     [Test]

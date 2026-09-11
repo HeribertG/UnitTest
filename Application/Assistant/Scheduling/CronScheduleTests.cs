@@ -38,6 +38,27 @@ public class CronScheduleTests
     }
 
     [Test]
+    public void TryNormalizeTimeZoneId_IanaId_ReturnsItUnchanged()
+    {
+        CronSchedule.TryNormalizeTimeZoneId(Zurich, out var ianaId).ShouldBeTrue();
+        ianaId.ShouldBe(Zurich);
+    }
+
+    [Test]
+    public void TryNormalizeTimeZoneId_WindowsId_ReturnsTheIanaId()
+    {
+        CronSchedule.TryNormalizeTimeZoneId("W. Europe Standard Time", out var ianaId).ShouldBeTrue();
+        ianaId.ShouldBe("Europe/Berlin");
+    }
+
+    [Test]
+    public void TryNormalizeTimeZoneId_Unknown_ReturnsFalse()
+    {
+        CronSchedule.TryNormalizeTimeZoneId("Mars/Olympus", out var ianaId).ShouldBeFalse();
+        ianaId.ShouldBeNull();
+    }
+
+    [Test]
     public void GetNextOccurrenceUtc_MondayEightLocal_IsSixUtcInSummer()
     {
         var from = new DateTime(2026, 6, 25, 0, 0, 0, DateTimeKind.Utc);

@@ -12,6 +12,7 @@ using Klacks.Api.Infrastructure.Repositories;
 using Klacks.Api.Infrastructure.Interfaces;
 using Klacks.Api.Domain.Interfaces;
 using Klacks.Api.Domain.Services.Groups;
+using Klacks.UnitTest.TestHelpers;
 using Microsoft.Extensions.Logging;
 using System.Linq.Expressions;
 
@@ -23,10 +24,11 @@ public class GroupSearchServiceTests
     private GroupRepository _groupRepository;
     private DataBaseContext _context;
     private List<Group> _testGroups;
-    private List<Client> _testClients;  
+    private List<Client> _testClients;
     private List<GroupItem> _testGroupItems;
     private List<Shift> _testShifts;
     private IGroupVisibilityService _mockGroupVisibility;
+    private IGroupSearchService _mockSearchService;
 
     [SetUp]
     public void SetUp()
@@ -42,18 +44,19 @@ public class GroupSearchServiceTests
         var mockTreeService = Substitute.For<IGroupTreeService>();
         var mockHierarchyService = Substitute.For<IGroupHierarchyService>();
         var mockSearchService = Substitute.For<IGroupSearchService>();
+        _mockSearchService = mockSearchService;
         var mockValidityService = Substitute.For<IGroupValidityService>();
         var mockMembershipService = Substitute.For<IGroupMembershipService>();
         var mockIntegrityService = Substitute.For<IGroupIntegrityService>();
         
         // Configure search service to actually perform filtering using real logic
-        mockSearchService.ApplyFilters(Arg.Any<IQueryable<Group>>(), Arg.Any<GroupFilter>()).Returns(info =>
+        mockSearchService.ApplyFilters(Arg.Any<IQueryable<Group>>(), Arg.Any<GroupFilter>(), Arg.Any<DateOnly>()).Returns(info =>
         {
             var query = info.Arg<IQueryable<Group>>();
             var filter = info.Arg<GroupFilter>();
-            
-            // Apply date range filtering
-            var now = DateTime.Now;
+
+            // Apply date range filtering, relative to the caller-supplied "today"
+            var now = info.ArgAt<DateOnly>(2).ToDateTime(TimeOnly.MinValue, DateTimeKind.Utc);
             
             // If all three date ranges are true, return all groups (no filtering)
             if (filter.ActiveDateRange && filter.FormerDateRange && filter.FutureDateRange)
@@ -156,7 +159,9 @@ public class GroupSearchServiceTests
         mockGroupServiceFacade.IntegrityService.Returns(mockIntegrityService);
 
         var mockGroupCacheService = Substitute.For<IGroupCacheService>();
-        _groupRepository = new GroupRepository(_context, mockGroupServiceFacade, mockGroupCacheService, Substitute.For<ILogger<Group>>());
+        _groupRepository = new GroupRepository(
+            _context, mockGroupServiceFacade, mockGroupCacheService, Substitute.For<ILogger<Group>>(),
+            new FixedCompanyClock(DateTimeOffset.UtcNow));
 
         CreateTestData();
     }
@@ -165,6 +170,22 @@ public class GroupSearchServiceTests
     public void TearDown()
     {
         _context?.Dispose();
+    }
+
+    /// <summary>
+    /// Mirrors the base query GroupRepository.Truncated used to build before routing through the
+    /// (now deleted, production-dead) GroupRepository.FilterGroup - kept here so the many filter-shape
+    /// tests below can still exercise IGroupSearchService.ApplyFilters end to end without a real clock.
+    /// </summary>
+    private IQueryable<Group> FilterGroup(GroupFilter filter)
+    {
+        var baseQuery = _context.Group
+            .Include(gr => gr.GroupItems)
+            .ThenInclude(gi => gi.Client)
+            .AsNoTracking()
+            .OrderBy(g => g.Root);
+
+        return _mockSearchService.ApplyFilters(baseQuery, filter, DateOnly.FromDateTime(DateTime.UtcNow));
     }
 
     private void CreateTestData()
@@ -382,7 +403,7 @@ public class GroupSearchServiceTests
         };
 
         // Act
-        var result = _groupRepository.FilterGroup(filter);
+        var result = FilterGroup(filter);
 
         // Assert
         result.Count().ShouldBe(_testGroups.Count);
@@ -400,7 +421,7 @@ public class GroupSearchServiceTests
         };
 
         // Act
-        var result = _groupRepository.FilterGroup(filter);
+        var result = FilterGroup(filter);
 
         // Assert
         result.Count().ShouldBe(_testGroups.Count);
@@ -423,7 +444,7 @@ public class GroupSearchServiceTests
         };
 
         // Act
-        var result = _groupRepository.FilterGroup(filter);
+        var result = FilterGroup(filter);
         var groups = result.ToList();
 
         // Assert
@@ -442,7 +463,7 @@ public class GroupSearchServiceTests
         };
 
         // Act
-        var result = _groupRepository.FilterGroup(filter);
+        var result = FilterGroup(filter);
         var groups = result.ToList();
 
         // Assert
@@ -462,7 +483,7 @@ public class GroupSearchServiceTests
         };
 
         // Act
-        var result = _groupRepository.FilterGroup(filter);
+        var result = FilterGroup(filter);
         var groups = result.ToList();
 
         // Assert
@@ -478,7 +499,7 @@ public class GroupSearchServiceTests
             FormerDateRange = true,
             FutureDateRange = true
         };
-        var result2 = _groupRepository.FilterGroup(filter2);
+        var result2 = FilterGroup(filter2);
         var groups2 = result2.ToList();
         groups2.Count().ShouldBe(1);
         groups2.First().Name.ShouldBe("Executives");
@@ -496,7 +517,7 @@ public class GroupSearchServiceTests
         };
 
         // Act
-        var result = _groupRepository.FilterGroup(filter);
+        var result = FilterGroup(filter);
         var groups = result.ToList();
 
         // Assert
@@ -517,7 +538,7 @@ public class GroupSearchServiceTests
         };
 
         // Act
-        var result = _groupRepository.FilterGroup(filter);
+        var result = FilterGroup(filter);
         var groups = result.ToList();
 
         // Assert
@@ -538,7 +559,7 @@ public class GroupSearchServiceTests
         };
 
         // Act
-        var result = _groupRepository.FilterGroup(filter);
+        var result = FilterGroup(filter);
         var groups = result.ToList();
 
         // Assert
@@ -558,7 +579,7 @@ public class GroupSearchServiceTests
         };
 
         // Act
-        var result = _groupRepository.FilterGroup(filter);
+        var result = FilterGroup(filter);
         var groups = result.ToList();
 
         // Assert
@@ -578,7 +599,7 @@ public class GroupSearchServiceTests
         };
 
         // Act
-        var result = _groupRepository.FilterGroup(filter);
+        var result = FilterGroup(filter);
         var groups = result.ToList();
 
         // Assert
@@ -597,7 +618,7 @@ public class GroupSearchServiceTests
         };
 
         // Act
-        var result = _groupRepository.FilterGroup(filter);
+        var result = FilterGroup(filter);
         var groups = result.ToList();
 
         // Assert
@@ -621,7 +642,7 @@ public class GroupSearchServiceTests
         };
 
         // Act
-        var result = _groupRepository.FilterGroup(filter);
+        var result = FilterGroup(filter);
         var groups = result.ToList();
 
         // Assert
@@ -642,7 +663,7 @@ public class GroupSearchServiceTests
         };
 
         // Act
-        var result = _groupRepository.FilterGroup(filter);
+        var result = FilterGroup(filter);
         var groups = result.ToList();
 
         // Assert
@@ -663,7 +684,7 @@ public class GroupSearchServiceTests
         };
 
         // Act
-        var result = _groupRepository.FilterGroup(filter);
+        var result = FilterGroup(filter);
         var groups = result.ToList();
 
         // Assert
@@ -690,7 +711,7 @@ public class GroupSearchServiceTests
         };
 
         // Act
-        var result = _groupRepository.FilterGroup(filter);
+        var result = FilterGroup(filter);
         var groups = result.ToList();
 
         // Assert
@@ -710,7 +731,7 @@ public class GroupSearchServiceTests
         };
 
         // Act
-        var result = _groupRepository.FilterGroup(filter);
+        var result = FilterGroup(filter);
         var groups = result.ToList();
 
         // Assert
@@ -733,7 +754,7 @@ public class GroupSearchServiceTests
         };
 
         // Act
-        var result = _groupRepository.FilterGroup(filter);
+        var result = FilterGroup(filter);
         var groups = result.ToList();
 
         // Assert
@@ -753,7 +774,7 @@ public class GroupSearchServiceTests
         };
 
         // Act
-        var result = _groupRepository.FilterGroup(filter);
+        var result = FilterGroup(filter);
         var groups = result.ToList();
 
         // Assert

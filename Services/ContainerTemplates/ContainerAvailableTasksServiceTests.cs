@@ -6,6 +6,7 @@ using Klacks.Api.Domain.Services.ContainerTemplates;
 using Klacks.Api.Infrastructure.Persistence;
 using Klacks.Api.Infrastructure.Repositories;
 using Klacks.Api.Application.Mappers;
+using Klacks.UnitTest.TestHelpers;
 using Microsoft.AspNetCore.Http;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
@@ -52,7 +53,8 @@ public class ContainerAvailableTasksServiceTests
             mockShiftGroupManagementService,
             collectionUpdateService,
             mockShiftValidator,
-            scheduleMapper);
+            scheduleMapper,
+            new FixedCompanyClock(DateTimeOffset.UtcNow));
 
         _groupItemRepository = new GroupItemRepository(_context, groupItemLogger);
 

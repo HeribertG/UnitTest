@@ -4,12 +4,15 @@ using Klacks.Api.Application.DTOs.PeriodClosing;
 using Klacks.Api.Application.Queries.PeriodClosing;
 using Klacks.Api.Application.Skills;
 using Klacks.Api.Infrastructure.Mediator;
+using Klacks.UnitTest.TestHelpers;
 
 namespace Klacks.UnitTest.Skills;
 
 [TestFixture]
 public class ListRecentExportsSkillTests
 {
+    private static readonly DateTimeOffset CompanyNow = new(2026, 6, 15, 10, 0, 0, TimeSpan.Zero);
+
     private static SkillExecutionContext Ctx() => new()
     {
         UserId = Guid.NewGuid(),
@@ -39,7 +42,7 @@ public class ListRecentExportsSkillTests
                     ExportedByName = "Hans Muster"
                 }
             });
-        var skill = new ListRecentExportsSkill(mediator);
+        var skill = new ListRecentExportsSkill(mediator, new FixedCompanyClock(CompanyNow));
 
         var result = await skill.ExecuteAsync(Ctx(), new Dictionary<string, object>
         {
@@ -62,17 +65,15 @@ public class ListRecentExportsSkillTests
         var mediator = Substitute.For<IMediator>();
         mediator.Send(Arg.Any<GetExportLogQuery>(), Arg.Any<CancellationToken>())
             .Returns(new List<ExportLogDto>());
-        var skill = new ListRecentExportsSkill(mediator);
+        var skill = new ListRecentExportsSkill(mediator, new FixedCompanyClock(CompanyNow));
 
-        var before = DateOnly.FromDateTime(DateTime.UtcNow);
+        var expectedTo = DateOnly.FromDateTime(CompanyNow.UtcDateTime);
         var result = await skill.ExecuteAsync(Ctx(), new Dictionary<string, object>());
-        var after = DateOnly.FromDateTime(DateTime.UtcNow);
 
         result.Success.ShouldBeTrue();
         await mediator.Received(1).Send(
             Arg.Is<GetExportLogQuery>(q =>
-                q.To >= before &&
-                q.To <= after &&
+                q.To == expectedTo &&
                 q.From == q.To.AddDays(-365)),
             Arg.Any<CancellationToken>());
     }
@@ -81,7 +82,7 @@ public class ListRecentExportsSkillTests
     public async Task List_FromAfterUntil_ReturnsError()
     {
         var mediator = Substitute.For<IMediator>();
-        var skill = new ListRecentExportsSkill(mediator);
+        var skill = new ListRecentExportsSkill(mediator, new FixedCompanyClock(CompanyNow));
 
         var result = await skill.ExecuteAsync(Ctx(), new Dictionary<string, object>
         {

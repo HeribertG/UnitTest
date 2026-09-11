@@ -42,7 +42,7 @@ public class AgentConditionDigestServiceTests
     private IAgentTriggerService _triggerService = null!;
     private ISettingsRepository _settingsRepository = null!;
     private IUnitOfWork _unitOfWork = null!;
-    private SettableTimeProvider _timeProvider = null!;
+    private FixedCompanyClock _companyClock = null!;
     private AgentConditionDigestService _service = null!;
     private List<IAgentTriggerEvent> _dispatched = null!;
 
@@ -55,12 +55,10 @@ public class AgentConditionDigestServiceTests
         _triggerService = Substitute.For<IAgentTriggerService>();
         _settingsRepository = Substitute.For<ISettingsRepository>();
         _unitOfWork = Substitute.For<IUnitOfWork>();
-        _timeProvider = new SettableTimeProvider(PastTargetUtc);
+        // No installation timezone/country configured -> company zone resolves to UTC, so "local" time
+        // equals UTC here.
+        _companyClock = new FixedCompanyClock(PastTargetUtc, TimeZoneInfo.Utc);
         _dispatched = new List<IAgentTriggerEvent>();
-
-        // No installation timezone/country configured -> resolves to UTC, so "local" time equals UTC here.
-        _settingsRepository.GetSetting(Klacks.Api.Application.Constants.Settings.APP_ADDRESS_TIMEZONE).Returns((SettingsEntity?)null);
-        _settingsRepository.GetSetting(Klacks.Api.Application.Constants.Settings.APP_ADDRESS_COUNTRY).Returns((SettingsEntity?)null);
 
         _triggerService
             .When(x => x.OnEventAsync(Arg.Any<IAgentTriggerEvent>(), Arg.Any<CancellationToken>()))
@@ -74,7 +72,7 @@ public class AgentConditionDigestServiceTests
             _settingsRepository,
             _unitOfWork,
             Options.Create(new BackgroundServiceOptions()),
-            _timeProvider,
+            _companyClock,
             Substitute.For<ILogger<AgentConditionDigestService>>());
     }
 
@@ -104,7 +102,7 @@ public class AgentConditionDigestServiceTests
     [Test]
     public async Task RunIfDue_BeforeConfiguredLocalTime_ReturnsNotDueYet_AndNeverClaims()
     {
-        _timeProvider.Now = BeforeTargetUtc;
+        _companyClock.Now = BeforeTargetUtc;
         GivenNoMarkerRowYet();
 
         var result = await _service.RunIfDueAsync();
@@ -297,7 +295,7 @@ public class AgentConditionDigestServiceTests
             _settingsRepository,
             _unitOfWork,
             Options.Create(new BackgroundServiceOptions { AgentConditionDigestTimeOfDayLocal = "6" }),
-            _timeProvider,
+            _companyClock,
             Substitute.For<ILogger<AgentConditionDigestService>>());
 
         GivenNoMarkerRowYet();

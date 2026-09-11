@@ -3,6 +3,7 @@ using Klacks.Api.Domain.Models.Associations;
 using Klacks.Api.Domain.Services.Groups;
 using Klacks.Api.Infrastructure.Interfaces;
 using Klacks.Api.Infrastructure.Persistence;
+using Klacks.UnitTest.TestHelpers;
 using Microsoft.AspNetCore.Http;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
@@ -33,7 +34,8 @@ public class GroupHierarchyServiceTests
         _mockGroupVisibilityService.IsAdmin().Returns(Task.FromResult(true));
         _mockGroupVisibilityService.ReadVisibleRootIdList().Returns(Task.FromResult(new List<Guid>()));
 
-        _hierarchyService = new GroupHierarchyService(_context, _mockLogger, _mockGroupVisibilityService);
+        _hierarchyService = new GroupHierarchyService(
+            _context, _mockLogger, _mockGroupVisibilityService, new FixedCompanyClock(DateTimeOffset.UtcNow));
     }
 
     [TearDown]
@@ -283,5 +285,41 @@ public class GroupHierarchyServiceTests
         // Let's just verify we get some roots and they include our root groups
         roots.ShouldContain(g => g.Id == rootId1);
         roots.ShouldContain(g => g.Id == rootId2);
+    }
+
+    [Test]
+    public async Task GetTreeAsync_AucklandCompanyDayAcrossUtcMidnight_UsesCompanyDayNotUtcDay()
+    {
+        // UTC instant 2026-06-27T23:30Z is still 27.06 in UTC but already 28.06 11:30 in Pacific/Auckland
+        // (+12:00, no DST in the southern-hemisphere winter). A group starting exactly on 2026-06-28
+        // must appear once the company day has crossed into 28.06, not only once the UTC day has.
+        var groupId = Guid.NewGuid();
+        var group = new Group
+        {
+            Id = groupId,
+            Name = "Auckland Boundary Group",
+            ValidFrom = new DateTime(2026, 6, 28, 0, 0, 0, DateTimeKind.Utc),
+            ValidUntil = null,
+            Lft = 1,
+            Rgt = 2
+        };
+        await _context.Group.AddAsync(group);
+        await _context.SaveChangesAsync();
+
+        var instant = DateTimeOffset.Parse(
+            "2026-06-27T23:30:00Z", System.Globalization.CultureInfo.InvariantCulture,
+            System.Globalization.DateTimeStyles.AdjustToUniversal);
+
+        var aucklandClock = new FixedCompanyClock(instant, TimeZoneInfo.FindSystemTimeZoneById("Pacific/Auckland"));
+        var aucklandService = new GroupHierarchyService(_context, _mockLogger, _mockGroupVisibilityService, aucklandClock);
+        var utcClock = new FixedCompanyClock(instant, TimeZoneInfo.Utc);
+        var utcService = new GroupHierarchyService(_context, _mockLogger, _mockGroupVisibilityService, utcClock);
+
+        var treeUnderCompanyDay = await aucklandService.GetTreeAsync();
+        var treeUnderUtcDay = await utcService.GetTreeAsync();
+
+        treeUnderCompanyDay.ShouldContain(g => g.Id == groupId,
+            "Company day (Pacific/Auckland) is already 28.06 at this UTC instant; the group must already be valid.");
+        treeUnderUtcDay.ShouldNotContain(g => g.Id == groupId);
     }
 }

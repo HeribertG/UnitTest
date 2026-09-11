@@ -20,6 +20,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.Extensions.Logging;
 using Klacks.UnitTest.FakeData;
+using Klacks.UnitTest.TestHelpers;
 
 namespace Klacks.UnitTest.Repository;
 
@@ -122,10 +123,10 @@ internal class GoupTests
             return Task.FromResult(newGroup);
         });
 
-        mockSearchService.ApplyFilters(Arg.Any<IQueryable<Group>>(), Arg.Any<GroupFilter>())
+        mockSearchService.ApplyFilters(Arg.Any<IQueryable<Group>>(), Arg.Any<GroupFilter>(), Arg.Any<DateOnly>())
             .Returns(info => info.Arg<IQueryable<Group>>());
 
-        mockValidityService.ApplyDateRangeFilter(Arg.Any<IQueryable<Group>>(), Arg.Any<bool>(), Arg.Any<bool>(), Arg.Any<bool>())
+        mockValidityService.ApplyDateRangeFilter(Arg.Any<IQueryable<Group>>(), Arg.Any<bool>(), Arg.Any<bool>(), Arg.Any<bool>(), Arg.Any<DateOnly>())
             .Returns(info => info.Arg<IQueryable<Group>>());
 
         var mockGroupVisibilityService = Substitute.For<IGroupVisibilityService>();
@@ -139,7 +140,8 @@ internal class GoupTests
         mockGroupServiceFacade.IntegrityService.Returns(mockIntegrityService);
 
         var mockGroupCacheService = Substitute.For<IGroupCacheService>();
-        var groupRepository = new GroupRepository(dbContext, mockGroupServiceFacade, mockGroupCacheService, _groupLogger);
+        var groupRepository = new GroupRepository(
+            dbContext, mockGroupServiceFacade, mockGroupCacheService, _groupLogger, new FixedCompanyClock(DateTimeOffset.UtcNow));
         var unitOfWork = new UnitOfWork(dbContext, _unitOfWorkLogger);
         var group = await CreateGroupAsync(1, clientRepository, clientFilterRepository);
         var command = new PostCommand<GroupResource>(group);

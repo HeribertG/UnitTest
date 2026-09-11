@@ -33,7 +33,7 @@ public class EscalationRosterServiceTests
     private DataBaseContext _dbContext = null!;
     private IGroupRepository _groupRepository = null!;
     private UserManager<AppUser> _userManager = null!;
-    private SettableTimeProvider _timeProvider = null!;
+    private FixedCompanyClock _companyClock = null!;
     private EscalationRosterService _service = null!;
 
     [Test]
@@ -151,6 +151,39 @@ public class EscalationRosterServiceTests
         var result = await _service.GetOrderedRosterAsync(groupId);
 
         result.Select(c => c.UserId).ShouldBe(new[] { member.Id });
+    }
+
+    [Test]
+    public async Task GetOrderedRosterAsync_AucklandCompanyDayAcrossUtcMidnight_UsesCompanyDayNotUtcDay()
+    {
+        // UTC instant 2026-06-27T23:30Z is still 27.06 in UTC but already 28.06 11:30 in Pacific/Auckland
+        // (+12:00, no DST in the southern-hemisphere winter). An absence period covering only 28.06 must
+        // exclude the member under the (correct) company day, even though the (wrong) UTC day 27.06 would
+        // not.
+        var instant = DateTimeOffset.Parse(
+            "2026-06-27T23:30:00Z", System.Globalization.CultureInfo.InvariantCulture,
+            System.Globalization.DateTimeStyles.AdjustToUniversal);
+        _companyClock = new FixedCompanyClock(instant, TimeZoneInfo.FindSystemTimeZoneById("Pacific/Auckland"));
+        _service = new EscalationRosterService(
+            _dbContext, _groupRepository, _userManager, _companyClock, Substitute.For<ILogger<EscalationRosterService>>());
+        var groupId = Guid.NewGuid();
+        _groupRepository.Get(groupId).Returns(new Group { Id = groupId });
+        StubNoAdmins();
+        var absentUser = StubUser("user-absent-boundary", escalationRosterOrder: 1);
+        var availableUser = StubUser("user-available-boundary", escalationRosterOrder: 2);
+        AddVisibility(groupId, absentUser.Id, availableUser.Id);
+        _dbContext.UserAbsencePeriod.Add(new UserAbsencePeriod
+        {
+            Id = Guid.NewGuid(),
+            AppUserId = absentUser.Id,
+            StartDate = new DateOnly(2026, 6, 28),
+            EndDate = new DateOnly(2026, 6, 28)
+        });
+        await _dbContext.SaveChangesAsync();
+
+        var result = await _service.GetOrderedRosterAsync(groupId);
+
+        result.Select(c => c.UserId).ShouldBe(new[] { availableUser.Id });
     }
 
     [Test]
@@ -291,7 +324,7 @@ public class EscalationRosterServiceTests
         _dbContext.Database.EnsureCreated();
 
         _groupRepository = Substitute.For<IGroupRepository>();
-        _timeProvider = new SettableTimeProvider(Today);
+        _companyClock = new FixedCompanyClock(new DateTimeOffset(Today, TimeSpan.Zero));
 
         var userStore = Substitute.For<IUserStore<AppUser>>();
         var identityOptions = Substitute.For<IOptions<IdentityOptions>>();
@@ -309,7 +342,7 @@ public class EscalationRosterServiceTests
 
         var serviceLogger = Substitute.For<ILogger<EscalationRosterService>>();
 
-        _service = new EscalationRosterService(_dbContext, _groupRepository, _userManager, _timeProvider, serviceLogger);
+        _service = new EscalationRosterService(_dbContext, _groupRepository, _userManager, _companyClock, serviceLogger);
 
         StubNoAdmins();
     }

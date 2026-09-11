@@ -82,7 +82,7 @@ public class GroupValidityServiceTests
         var baseQuery = _context.Group.AsQueryable();
 
         // Act
-        var result = _validityService.ApplyDateRangeFilter(baseQuery, true, false, false);
+        var result = _validityService.ApplyDateRangeFilter(baseQuery, true, false, false, DateOnly.FromDateTime(DateTime.UtcNow));
         var groups = await result.ToListAsync();
 
         // Assert
@@ -138,7 +138,7 @@ public class GroupValidityServiceTests
         var baseQuery = _context.Group.AsQueryable();
 
         // Act
-        var result = _validityService.ApplyDateRangeFilter(baseQuery, false, true, false);
+        var result = _validityService.ApplyDateRangeFilter(baseQuery, false, true, false, DateOnly.FromDateTime(DateTime.UtcNow));
         var groups = await result.ToListAsync();
 
         // Assert
@@ -194,7 +194,7 @@ public class GroupValidityServiceTests
         var baseQuery = _context.Group.AsQueryable();
 
         // Act
-        var result = _validityService.ApplyDateRangeFilter(baseQuery, false, false, true);
+        var result = _validityService.ApplyDateRangeFilter(baseQuery, false, false, true, DateOnly.FromDateTime(DateTime.UtcNow));
         var groups = await result.ToListAsync();
 
         // Assert
@@ -237,7 +237,7 @@ public class GroupValidityServiceTests
         var baseQuery = _context.Group.AsQueryable();
 
         // Act
-        var result = _validityService.ApplyDateRangeFilter(baseQuery, true, true, true);
+        var result = _validityService.ApplyDateRangeFilter(baseQuery, true, true, true, DateOnly.FromDateTime(DateTime.UtcNow));
         var groups = await result.ToListAsync();
 
         // Assert
@@ -267,8 +267,8 @@ public class GroupValidityServiceTests
         var baseQuery = _context.Group.AsQueryable();
 
         // Act
-        var result = _validityService.ApplyDateRangeFilter(baseQuery, false, false, false);
-        
+        var result = _validityService.ApplyDateRangeFilter(baseQuery, false, false, false, DateOnly.FromDateTime(DateTime.UtcNow));
+
         // The service returns Enumerable.Empty<Group>().AsQueryable() which can't be used with EF async operations
         // So we use the synchronous version
         var groups = result.ToList();
@@ -278,57 +278,124 @@ public class GroupValidityServiceTests
     }
 
     [Test]
-    public async Task IsGroupActive_WithActiveGroup_ShouldReturnTrue()
+    public async Task ApplyDateRangeFilter_ValidUntilIsToday_IsActiveNotFormer()
     {
-        // Arrange
         var groupId = Guid.NewGuid();
-        var now = DateTime.Now;
+        var todayDate = DateTime.UtcNow.Date;
+        var today = DateOnly.FromDateTime(todayDate);
 
-        var activeGroup = new Group
+        var group = new Group
         {
             Id = groupId,
-            Name = "Active Group",
-            ValidFrom = now.AddDays(-5),
-            ValidUntil = now.AddDays(5),
+            Name = "Expires Today",
+            ValidFrom = todayDate.AddDays(-10),
+            ValidUntil = todayDate,
             Lft = 1,
             Rgt = 2
         };
 
-        await _context.Group.AddAsync(activeGroup);
+        await _context.Group.AddAsync(group);
         await _context.SaveChangesAsync();
 
-        // Act
-        var isActive = _validityService.IsGroupActive(activeGroup);
+        var baseQuery = _context.Group.AsQueryable();
 
-        // Assert
-        isActive.ShouldBeTrue();
+        var activeResult = await _validityService.ApplyDateRangeFilter(baseQuery, true, false, false, today).ToListAsync();
+        var formerResult = _validityService.ApplyDateRangeFilter(baseQuery, false, true, false, today).ToList();
+
+        activeResult.ShouldContain(g => g.Id == groupId);
+        formerResult.ShouldNotContain(g => g.Id == groupId);
     }
 
     [Test]
-    public async Task IsGroupActive_WithExpiredGroup_ShouldReturnFalse()
+    public async Task ApplyDateRangeFilter_ValidFromIsToday_IsActiveNotFuture()
     {
-        // Arrange
         var groupId = Guid.NewGuid();
-        var now = DateTime.Now;
+        var todayDate = DateTime.UtcNow.Date;
+        var today = DateOnly.FromDateTime(todayDate);
 
-        var expiredGroup = new Group
+        var group = new Group
         {
             Id = groupId,
-            Name = "Expired Group",
-            ValidFrom = now.AddDays(-15),
-            ValidUntil = now.AddDays(-5),
+            Name = "Starts Today",
+            ValidFrom = todayDate,
+            ValidUntil = todayDate.AddDays(10),
             Lft = 1,
             Rgt = 2
         };
 
-        await _context.Group.AddAsync(expiredGroup);
+        await _context.Group.AddAsync(group);
         await _context.SaveChangesAsync();
 
-        // Act
-        var isActive = _validityService.IsGroupActive(expiredGroup);
+        var baseQuery = _context.Group.AsQueryable();
 
-        // Assert
-        isActive.ShouldBeFalse();
+        var activeResult = await _validityService.ApplyDateRangeFilter(baseQuery, true, false, false, today).ToListAsync();
+        var futureResult = await _validityService.ApplyDateRangeFilter(baseQuery, false, false, true, today).ToListAsync();
+
+        activeResult.ShouldContain(g => g.Id == groupId);
+        futureResult.ShouldNotContain(g => g.Id == groupId);
+    }
+
+    [Test]
+    public async Task ApplyDateRangeFilter_ValidUntilWasYesterday_IsFormer()
+    {
+        var groupId = Guid.NewGuid();
+        var todayDate = DateTime.UtcNow.Date;
+        var today = DateOnly.FromDateTime(todayDate);
+
+        var group = new Group
+        {
+            Id = groupId,
+            Name = "Expired Yesterday",
+            ValidFrom = todayDate.AddDays(-10),
+            ValidUntil = todayDate.AddDays(-1),
+            Lft = 1,
+            Rgt = 2
+        };
+
+        await _context.Group.AddAsync(group);
+        await _context.SaveChangesAsync();
+
+        var baseQuery = _context.Group.AsQueryable();
+
+        var formerResult = await _validityService.ApplyDateRangeFilter(baseQuery, false, true, false, today).ToListAsync();
+        var activeResult = _validityService.ApplyDateRangeFilter(baseQuery, true, false, false, today).ToList();
+
+        formerResult.ShouldContain(g => g.Id == groupId);
+        activeResult.ShouldNotContain(g => g.Id == groupId);
+    }
+
+    [Test]
+    public async Task ApplyDateRangeFilter_AucklandCompanyDayAcrossUtcMidnight_UsesCompanyDayNotUtcDay()
+    {
+        // Company day (Pacific/Auckland) is 2026-06-28 at the UTC instant 2026-06-27T23:30Z. A group
+        // whose ValidFrom is exactly 2026-06-28 must be classified active under the correct company
+        // day, but would still be classified future under the (wrong) UTC day 2026-06-27.
+        var groupId = Guid.NewGuid();
+        var companyDay = new DateTime(2026, 6, 28, 0, 0, 0, DateTimeKind.Utc);
+        var group = new Group
+        {
+            Id = groupId,
+            Name = "Auckland Boundary Group",
+            ValidFrom = companyDay,
+            ValidUntil = companyDay.AddDays(2),
+            Lft = 1,
+            Rgt = 2
+        };
+
+        await _context.Group.AddAsync(group);
+        await _context.SaveChangesAsync();
+
+        var baseQuery = _context.Group.AsQueryable();
+
+        var activeUnderCompanyDay = await _validityService
+            .ApplyDateRangeFilter(baseQuery, true, false, false, DateOnly.FromDateTime(companyDay))
+            .ToListAsync();
+        var activeUnderWrongUtcDay = await _validityService
+            .ApplyDateRangeFilter(baseQuery, true, false, false, DateOnly.FromDateTime(companyDay.AddDays(-1)))
+            .ToListAsync();
+
+        activeUnderCompanyDay.ShouldContain(g => g.Id == groupId);
+        activeUnderWrongUtcDay.ShouldNotContain(g => g.Id == groupId);
     }
 
     [Test]

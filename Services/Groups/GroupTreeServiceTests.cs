@@ -11,6 +11,7 @@ using Klacks.Api.Infrastructure.Repositories;
 using Klacks.Api.Infrastructure.Interfaces;
 using Klacks.Api.Domain.Interfaces;
 using Klacks.Api.Domain.Services.Groups;
+using Klacks.UnitTest.TestHelpers;
 using Microsoft.Extensions.Logging;
 
 namespace Klacks.UnitTest.Services.Groups;
@@ -251,11 +252,11 @@ public class GroupTreeServiceTests
         mockIntegrityService.ValidateNestedSetIntegrityAsync(Arg.Any<Guid>()).Returns(Task.FromResult(true));
         
         // Configure search service to pass through queries unchanged for these tests
-        mockSearchService.ApplyFilters(Arg.Any<IQueryable<Group>>(), Arg.Any<GroupFilter>())
+        mockSearchService.ApplyFilters(Arg.Any<IQueryable<Group>>(), Arg.Any<GroupFilter>(), Arg.Any<DateOnly>())
             .Returns(info => info.Arg<IQueryable<Group>>());
-            
+
         // Configure validity service to pass through queries unchanged
-        mockValidityService.ApplyDateRangeFilter(Arg.Any<IQueryable<Group>>(), Arg.Any<bool>(), Arg.Any<bool>(), Arg.Any<bool>())
+        mockValidityService.ApplyDateRangeFilter(Arg.Any<IQueryable<Group>>(), Arg.Any<bool>(), Arg.Any<bool>(), Arg.Any<bool>(), Arg.Any<DateOnly>())
             .Returns(info => info.Arg<IQueryable<Group>>());
             
         // Configure membership service  
@@ -278,7 +279,8 @@ public class GroupTreeServiceTests
         mockGroupServiceFacade.IntegrityService.Returns(mockIntegrityService);
 
         var mockGroupCacheService = Substitute.For<IGroupCacheService>();
-        _groupRepository = new GroupRepository(_context, mockGroupServiceFacade, mockGroupCacheService, _mockLogger);
+        _groupRepository = new GroupRepository(
+            _context, mockGroupServiceFacade, mockGroupCacheService, _mockLogger, new FixedCompanyClock(DateTimeOffset.UtcNow));
 
         CreateTestData();
     }

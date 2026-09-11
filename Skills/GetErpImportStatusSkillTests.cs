@@ -12,6 +12,7 @@ using Klacks.Api.Domain.Constants;
 using Klacks.Api.Domain.Interfaces.Settings;
 using Klacks.Api.Domain.Models.Assistant;
 using Klacks.Api.Infrastructure.Mediator;
+using Klacks.UnitTest.TestHelpers;
 using SettingsModel = Klacks.Api.Domain.Models.Settings.Settings;
 
 namespace Klacks.UnitTest.Skills;
@@ -38,7 +39,8 @@ public class GetErpImportStatusSkillTests
         mediator.Send(Arg.Any<GetDefaultFilesQuery>(), Arg.Any<CancellationToken>())
             .Returns(EmptyFiles());
         var settingsReader = Substitute.For<ISettingsReader>();
-        var skill = new GetErpImportStatusSkill(mediator, settingsReader);
+        var companyClock = new FixedCompanyClock(DateTimeOffset.UtcNow, TimeZoneInfo.Utc);
+        var skill = new GetErpImportStatusSkill(mediator, settingsReader, companyClock);
 
         var result = await skill.ExecuteAsync(Ctx(), new Dictionary<string, object>());
 
@@ -69,7 +71,8 @@ public class GetErpImportStatusSkillTests
             .Returns(new SettingsModel { Type = ErpImportSettingsTypes.CronTimeZoneId, Value = "Europe/Zurich" });
         settingsReader.GetSetting(ErpImportSettingsTypes.NextRunUtc)
             .Returns(new SettingsModel { Type = ErpImportSettingsTypes.NextRunUtc, Value = new DateTime(2026, 7, 4, 10, 0, 0, DateTimeKind.Utc).ToString("O") });
-        var skill = new GetErpImportStatusSkill(mediator, settingsReader);
+        var companyClock = new FixedCompanyClock(DateTimeOffset.UtcNow, TimeZoneInfo.Utc);
+        var skill = new GetErpImportStatusSkill(mediator, settingsReader, companyClock);
 
         var result = await skill.ExecuteAsync(Ctx(), new Dictionary<string, object>());
 
@@ -79,7 +82,7 @@ public class GetErpImportStatusSkillTests
     }
 
     [Test]
-    public async Task MissingCronSettings_FallBackToDefaults()
+    public async Task MissingCronSettings_FallBackToDefaultCronAndCompanyZone()
     {
         var mediator = Substitute.For<IMediator>();
         mediator.Send(Arg.Any<GetDefaultQuery>(), Arg.Any<CancellationToken>())
@@ -87,12 +90,13 @@ public class GetErpImportStatusSkillTests
         mediator.Send(Arg.Any<GetDefaultFilesQuery>(), Arg.Any<CancellationToken>())
             .Returns(EmptyFiles());
         var settingsReader = Substitute.For<ISettingsReader>();
-        var skill = new GetErpImportStatusSkill(mediator, settingsReader);
+        var companyClock = new FixedCompanyClock(DateTimeOffset.UtcNow, TimeZoneInfo.FindSystemTimeZoneById("Asia/Tokyo"));
+        var skill = new GetErpImportStatusSkill(mediator, settingsReader, companyClock);
 
         var result = await skill.ExecuteAsync(Ctx(), new Dictionary<string, object>());
 
         result.Success.ShouldBeTrue();
         result.Message.ShouldContain(ErpImportSettingsTypes.DefaultCronExpression);
-        result.Message.ShouldContain(ErpImportSettingsTypes.DefaultTimeZoneId);
+        result.Message.ShouldContain("Asia/Tokyo");
     }
 }

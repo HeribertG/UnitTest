@@ -10,8 +10,10 @@ using Klacks.Api.Application.Interfaces;
 using Klacks.Api.Application.Skills;
 using Klacks.Api.Domain.Common;
 using Klacks.Api.Domain.Interfaces;
+using Klacks.Api.Domain.Interfaces.Settings;
 using Klacks.Api.Domain.Models.Assistant;
 using Klacks.Api.Domain.Models.Settings;
+using Klacks.UnitTest.TestHelpers;
 
 namespace Klacks.UnitTest.Skills;
 
@@ -20,12 +22,14 @@ public class HolidaySkillTests
 {
     private ISettingsRepository _settingsRepository = null!;
     private IUnitOfWork _unitOfWork = null!;
+    private ICompanyClock _companyClock = null!;
 
     [SetUp]
     public void Setup()
     {
         _settingsRepository = Substitute.For<ISettingsRepository>();
         _unitOfWork = Substitute.For<IUnitOfWork>();
+        _companyClock = new FixedCompanyClock(new DateTimeOffset(2026, 1, 15, 0, 0, 0, TimeSpan.Zero));
     }
 
     private static SkillExecutionContext Ctx() => new()
@@ -146,7 +150,7 @@ public class HolidaySkillTests
     [Test]
     public async Task ImportCalendarRules_RejectsInvalidJson()
     {
-        var skill = new ImportCalendarRulesSkill(_settingsRepository, _unitOfWork);
+        var skill = new ImportCalendarRulesSkill(_settingsRepository, _unitOfWork, _companyClock);
         var parameters = new Dictionary<string, object>
         {
             ["country"] = "CH",
@@ -163,7 +167,7 @@ public class HolidaySkillTests
     [Test]
     public async Task ImportCalendarRules_RejectsEmptyArray()
     {
-        var skill = new ImportCalendarRulesSkill(_settingsRepository, _unitOfWork);
+        var skill = new ImportCalendarRulesSkill(_settingsRepository, _unitOfWork, _companyClock);
         var parameters = new Dictionary<string, object>
         {
             ["country"] = "CH",
@@ -179,7 +183,7 @@ public class HolidaySkillTests
     [Test]
     public async Task ImportCalendarRules_AddsValidRulesAndPersists()
     {
-        var skill = new ImportCalendarRulesSkill(_settingsRepository, _unitOfWork);
+        var skill = new ImportCalendarRulesSkill(_settingsRepository, _unitOfWork, _companyClock);
         var rulesJson = """
             [
               { "rule": "01.01", "nameDe": "Neujahr", "nameEn": "New Year" },

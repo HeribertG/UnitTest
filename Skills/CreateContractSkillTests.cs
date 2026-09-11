@@ -5,14 +5,19 @@ using Klacks.Api.Application.DTOs.Associations;
 using Klacks.Api.Application.Queries;
 using Klacks.Api.Application.Skills;
 using Klacks.Api.Domain.Enums;
+using Klacks.Api.Domain.Interfaces.Settings;
 using Klacks.Api.Domain.Models.Assistant;
 using Klacks.Api.Infrastructure.Mediator;
+using Klacks.UnitTest.TestHelpers;
 
 namespace Klacks.UnitTest.Skills;
 
 [TestFixture]
 public class CreateContractSkillTests
 {
+    private static readonly ICompanyClock CompanyClock =
+        new FixedCompanyClock(new DateTimeOffset(2026, 6, 1, 0, 0, 0, TimeSpan.Zero));
+
     private static SkillExecutionContext Ctx() => new()
     {
         UserId = Guid.NewGuid(),
@@ -35,10 +40,52 @@ public class CreateContractSkillTests
     }
 
     [Test]
+    public async Task ValidFrom_TodayWord_ResolvesToCompanyLocalDay_NotUtcDay()
+    {
+        // Pacific/Auckland edge case: 23:30 UTC on 27.06 is already 11:30 NZST (+12, no June DST) on
+        // 28.06 - "heute" must resolve to the company's local calendar day, not the UTC day.
+        var auckland = TimeZoneInfo.FindSystemTimeZoneById("Pacific/Auckland");
+        var aucklandClock = new FixedCompanyClock(new DateTimeOffset(2026, 6, 27, 23, 30, 0, TimeSpan.Zero), auckland);
+        var mediator = MediatorReturningCreated();
+        var skill = new CreateContractSkill(mediator, aucklandClock);
+
+        var result = await skill.ExecuteAsync(Ctx(), new Dictionary<string, object>
+        {
+            ["name"] = "Auckland Today",
+            ["guaranteedHours"] = 100m,
+            ["validFrom"] = "heute"
+        });
+
+        result.Success.ShouldBeTrue(result.Message);
+        await mediator.Received(1).Send(
+            Arg.Is<PostCommand<ContractResource>>(c =>
+                c.Resource.ValidFrom == new DateTime(2026, 6, 28, 0, 0, 0, DateTimeKind.Utc) &&
+                c.Resource.ValidFrom.Kind == DateTimeKind.Utc),
+            Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task ValidFrom_UnreadableValue_ReturnsError_NoMutation()
+    {
+        var mediator = Substitute.For<IMediator>();
+        var skill = new CreateContractSkill(mediator, CompanyClock);
+
+        var result = await skill.ExecuteAsync(Ctx(), new Dictionary<string, object>
+        {
+            ["name"] = "X",
+            ["guaranteedHours"] = 100m,
+            ["validFrom"] = "not-a-date"
+        });
+
+        result.Success.ShouldBeFalse();
+        await mediator.DidNotReceive().Send(Arg.Any<PostCommand<ContractResource>>(), Arg.Any<CancellationToken>());
+    }
+
+    [Test]
     public async Task ExplicitValues_CreatesTemplate_WithDefaultsApplied()
     {
         var mediator = MediatorReturningCreated();
-        var skill = new CreateContractSkill(mediator);
+        var skill = new CreateContractSkill(mediator, CompanyClock);
 
         var result = await skill.ExecuteAsync(Ctx(), new Dictionary<string, object>
         {
@@ -61,10 +108,29 @@ public class CreateContractSkillTests
     }
 
     [Test]
+    public async Task ValidFrom_PersistsKindUtc_SoNpgsqlAcceptsTheTimestamptzWrite()
+    {
+        var mediator = MediatorReturningCreated();
+        var skill = new CreateContractSkill(mediator, CompanyClock);
+
+        var result = await skill.ExecuteAsync(Ctx(), new Dictionary<string, object>
+        {
+            ["name"] = "Standard 80%",
+            ["guaranteedHours"] = 134.4m,
+            ["validFrom"] = "2026-07-01"
+        });
+
+        result.Success.ShouldBeTrue();
+        await mediator.Received(1).Send(
+            Arg.Is<PostCommand<ContractResource>>(c => c.Resource.ValidFrom.Kind == DateTimeKind.Utc),
+            Arg.Any<CancellationToken>());
+    }
+
+    [Test]
     public async Task ZeroGuaranteedHours_TakesFixedHoursPath_OnCallContract()
     {
         var mediator = MediatorReturningCreated();
-        var skill = new CreateContractSkill(mediator);
+        var skill = new CreateContractSkill(mediator, CompanyClock);
 
         var result = await skill.ExecuteAsync(Ctx(), new Dictionary<string, object>
         {
@@ -87,7 +153,7 @@ public class CreateContractSkillTests
     public async Task NoGuaranteedHours_WithPercent_TakesInheritedWorkloadPath()
     {
         var mediator = MediatorReturningCreated();
-        var skill = new CreateContractSkill(mediator);
+        var skill = new CreateContractSkill(mediator, CompanyClock);
 
         var result = await skill.ExecuteAsync(Ctx(), new Dictionary<string, object>
         {
@@ -112,7 +178,7 @@ public class CreateContractSkillTests
     public async Task NoGuaranteedHours_NoPercent_StillSucceeds_ServerDefaultsPercentLater()
     {
         var mediator = MediatorReturningCreated();
-        var skill = new CreateContractSkill(mediator);
+        var skill = new CreateContractSkill(mediator, CompanyClock);
 
         var result = await skill.ExecuteAsync(Ctx(), new Dictionary<string, object>
         {
@@ -134,7 +200,7 @@ public class CreateContractSkillTests
     public async Task PercentSupplied_IsPassedThrough()
     {
         var mediator = MediatorReturningCreated();
-        var skill = new CreateContractSkill(mediator);
+        var skill = new CreateContractSkill(mediator, CompanyClock);
 
         var result = await skill.ExecuteAsync(Ctx(), new Dictionary<string, object>
         {
@@ -154,7 +220,7 @@ public class CreateContractSkillTests
     public async Task NegativePercent_ReturnsErrorWithoutMutation()
     {
         var mediator = MediatorReturningCreated();
-        var skill = new CreateContractSkill(mediator);
+        var skill = new CreateContractSkill(mediator, CompanyClock);
 
         var result = await skill.ExecuteAsync(Ctx(), new Dictionary<string, object>
         {
@@ -172,7 +238,7 @@ public class CreateContractSkillTests
     public async Task ExplicitRangeAndInterval_ArePassedThrough()
     {
         var mediator = MediatorReturningCreated();
-        var skill = new CreateContractSkill(mediator);
+        var skill = new CreateContractSkill(mediator, CompanyClock);
 
         var result = await skill.ExecuteAsync(Ctx(), new Dictionary<string, object>
         {
@@ -202,7 +268,7 @@ public class CreateContractSkillTests
     public async Task MissingRequiredParameter_ReturnsErrorWithoutMutation(string missing)
     {
         var mediator = Substitute.For<IMediator>();
-        var skill = new CreateContractSkill(mediator);
+        var skill = new CreateContractSkill(mediator, CompanyClock);
         var parameters = new Dictionary<string, object>
         {
             ["name"] = "X",
@@ -221,7 +287,7 @@ public class CreateContractSkillTests
     public async Task MinAboveMax_ReturnsErrorWithoutMutation()
     {
         var mediator = Substitute.For<IMediator>();
-        var skill = new CreateContractSkill(mediator);
+        var skill = new CreateContractSkill(mediator, CompanyClock);
 
         var result = await skill.ExecuteAsync(Ctx(), new Dictionary<string, object>
         {
@@ -240,7 +306,7 @@ public class CreateContractSkillTests
     public async Task GuaranteedOutsideRange_ReturnsError()
     {
         var mediator = Substitute.For<IMediator>();
-        var skill = new CreateContractSkill(mediator);
+        var skill = new CreateContractSkill(mediator, CompanyClock);
 
         var result = await skill.ExecuteAsync(Ctx(), new Dictionary<string, object>
         {
@@ -258,7 +324,7 @@ public class CreateContractSkillTests
     public async Task ValidUntilBeforeValidFrom_ReturnsError()
     {
         var mediator = Substitute.For<IMediator>();
-        var skill = new CreateContractSkill(mediator);
+        var skill = new CreateContractSkill(mediator, CompanyClock);
 
         var result = await skill.ExecuteAsync(Ctx(), new Dictionary<string, object>
         {
@@ -275,7 +341,7 @@ public class CreateContractSkillTests
     public async Task InvalidPaymentInterval_ReturnsError()
     {
         var mediator = Substitute.For<IMediator>();
-        var skill = new CreateContractSkill(mediator);
+        var skill = new CreateContractSkill(mediator, CompanyClock);
 
         var result = await skill.ExecuteAsync(Ctx(), new Dictionary<string, object>
         {
@@ -311,7 +377,7 @@ public class CreateContractSkillTests
                 directCreated = resource;
                 return resource;
             });
-        var directSkill = new CreateContractSkill(directMediator);
+        var directSkill = new CreateContractSkill(directMediator, CompanyClock);
         var directResult = await directSkill.ExecuteAsync(Ctx(), new Dictionary<string, object>
         {
             ["name"] = "Direct Inherited",
@@ -330,7 +396,7 @@ public class CreateContractSkillTests
                 workaroundCreated = resource;
                 return resource;
             });
-        var workaroundCreateSkill = new CreateContractSkill(workaroundCreateMediator);
+        var workaroundCreateSkill = new CreateContractSkill(workaroundCreateMediator, CompanyClock);
         var workaroundCreateResult = await workaroundCreateSkill.ExecuteAsync(Ctx(), new Dictionary<string, object>
         {
             ["name"] = "Workaround Inherited",
@@ -351,7 +417,7 @@ public class CreateContractSkillTests
                 workaroundFinal = resource;
                 return resource;
             });
-        var updateSkill = new UpdateContractSkill(updateMediator);
+        var updateSkill = new UpdateContractSkill(updateMediator, CompanyClock);
 
         var updateResult = await updateSkill.ExecuteAsync(Ctx(), new Dictionary<string, object>
         {

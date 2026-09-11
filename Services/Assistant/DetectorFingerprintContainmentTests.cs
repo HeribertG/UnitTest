@@ -52,7 +52,7 @@ public class DetectorFingerprintContainmentTests
             .ToList();
         repository.GetQuery().Returns(new TestAsyncEnumerable<Shift>(orders));
 
-        var sut = new OpenOrderDetector(repository, ShiftGroupScopeReaderStub.WithoutAnyGroups(), NullLogger<OpenOrderDetector>.Instance);
+        var sut = new OpenOrderDetector(repository, ShiftGroupScopeReaderStub.WithoutAnyGroups(), FixedClock(), NullLogger<OpenOrderDetector>.Instance);
 
         await AssertContainmentAsync(sut, sut, expectedCappedCount: OpenOrderDetector.MaxCandidatesToScan);
     }
@@ -77,7 +77,7 @@ public class DetectorFingerprintContainmentTests
             .ToList();
         repository.GetQuery().Returns(new TestAsyncEnumerable<Shift>(shifts));
 
-        var sut = new UncutFullDayShiftDetector(repository, ShiftGroupScopeReaderStub.WithoutAnyGroups(), NullLogger<UncutFullDayShiftDetector>.Instance);
+        var sut = new UncutFullDayShiftDetector(repository, ShiftGroupScopeReaderStub.WithoutAnyGroups(), FixedClock(), NullLogger<UncutFullDayShiftDetector>.Instance);
 
         await AssertContainmentAsync(sut, sut, expectedCappedCount: UncutFullDayShiftDetector.MaxFindingsPerTick);
     }
@@ -113,7 +113,7 @@ public class DetectorFingerprintContainmentTests
 
         var sut = new EmptyContainerDetector(
             shiftRepository, templateRepository, ShiftGroupScopeReaderStub.WithoutAnyGroups(),
-            agentConditionRepository, TimeProvider.System, NullLogger<EmptyContainerDetector>.Instance);
+            agentConditionRepository, FixedClock(), NullLogger<EmptyContainerDetector>.Instance);
 
         var fingerprints = await AssertContainmentAsync(
             sut, sut, expectedCappedCount: EmptyContainerDetector.MaxFindingsPerTick);
@@ -153,7 +153,7 @@ public class DetectorFingerprintContainmentTests
                 return (assignments.Where(a => pagedShiftIds.Contains(a.ShiftId)).ToList(), pagedShiftIds.Count);
             });
 
-        var sut = new UnstaffedShift7dDetector(repository, ShiftGroupScopeReaderStub.WithoutAnyGroups(), NullLogger<UnstaffedShift7dDetector>.Instance);
+        var sut = new UnstaffedShift7dDetector(repository, ShiftGroupScopeReaderStub.WithoutAnyGroups(), FixedClock(), NullLogger<UnstaffedShift7dDetector>.Instance);
 
         await AssertContainmentAsync(sut, sut, expectedCappedCount: cappedShiftCount);
     }
@@ -203,14 +203,8 @@ public class DetectorFingerprintContainmentTests
             + "fingerprints per client exactly as DetectAsync emits two events per client.");
     }
 
-    private static TimeProvider FixedClock()
-    {
-        var timeProvider = Substitute.For<TimeProvider>();
-        timeProvider.GetUtcNow()
-            .Returns(new DateTimeOffset(Today.ToDateTime(TimeOnly.MinValue, DateTimeKind.Utc)));
-
-        return timeProvider;
-    }
+    private static FixedCompanyClock FixedClock() =>
+        new(new DateTimeOffset(Today.ToDateTime(TimeOnly.MinValue, DateTimeKind.Utc)));
 
     private static async Task<IReadOnlySet<string>> AssertContainmentAsync(
         IAgentTriggerDetector detector,

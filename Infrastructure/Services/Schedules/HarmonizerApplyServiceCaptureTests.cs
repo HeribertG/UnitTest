@@ -15,6 +15,7 @@ using Klacks.Api.Infrastructure.Persistence;
 using Klacks.Api.Infrastructure.Services.Schedules;
 using Klacks.Api.Infrastructure.Services.Schedules.HolisticHarmonizer;
 using Klacks.ScheduleOptimizer.Harmonizer.Bitmap;
+using Klacks.UnitTest.TestHelpers;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging.Abstractions;
 using NSubstitute;
@@ -99,11 +100,13 @@ public class HarmonizerApplyServiceCaptureTests
     private HarmonizerApplyService BuildHarmonizerSut() => new(
         _cache, _mediator, _scenarioRepository, _scenarioService, _unitOfWork, _context, _captureRepository,
         _scenarioComplianceService, _timelineService, _snapshotMarkerService,
+        new FixedCompanyClock(new DateTimeOffset(2026, 4, 20, 0, 0, 0, TimeSpan.Zero)),
         NullLogger<HarmonizerApplyService>.Instance);
 
     private HolisticHarmonizerApplyService BuildHolisticSut() => new(
         _cache, _mediator, _scenarioRepository, _scenarioService, _unitOfWork, _context, _captureRepository,
         _scenarioComplianceService, _timelineService, _snapshotMarkerService,
+        new FixedCompanyClock(new DateTimeOffset(2026, 4, 20, 0, 0, 0, TimeSpan.Zero)),
         NullLogger<HarmonizerApplyService>.Instance);
 
     private HarmonyBitmap BestBitmap()

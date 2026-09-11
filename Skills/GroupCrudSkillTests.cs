@@ -9,6 +9,7 @@ using Klacks.Api.Application.Interfaces;
 using Klacks.Api.Application.Skills;
 using Klacks.Api.Domain.Enums;
 using Klacks.Api.Domain.Interfaces;
+using Klacks.Api.Domain.Interfaces.Settings;
 using Klacks.Api.Domain.Models.Assistant;
 using Klacks.Api.Domain.Models.Associations;
 
@@ -17,6 +18,7 @@ using Klacks.Api.Application.DTOs.Associations;
 using Klacks.Api.Application.Mappers;
 
 using Klacks.UnitTest.Infrastructure.SelfApi;
+using Klacks.UnitTest.TestHelpers;
 
 namespace Klacks.UnitTest.Skills;
 
@@ -26,6 +28,7 @@ public class GroupCrudSkillTests
     private IGroupRepository _groupRepository = null!;
     private ICalendarSelectionRepository _calendarSelectionRepository = null!;
     private FakeSelfApi _api = null!;
+    private ICompanyClock _companyClock = null!;
     private Group? _persistedGroup;
 
     [SetUp]
@@ -33,6 +36,7 @@ public class GroupCrudSkillTests
     {
         _groupRepository = Substitute.For<IGroupRepository>();
         _calendarSelectionRepository = Substitute.For<ICalendarSelectionRepository>();
+        _companyClock = new FixedCompanyClock(new DateTimeOffset(2026, 1, 1, 0, 0, 0, TimeSpan.Zero));
         _api = new FakeSelfApi();
         _api.Respond(HttpMethod.Post, "api/backend/Groups", new GroupResource());
         _api.Respond(HttpMethod.Put, "api/backend/Groups", new GroupResource());
@@ -67,7 +71,7 @@ public class GroupCrudSkillTests
     [Test]
     public async Task CreateGroup_ReturnsError_WhenParentNotFound()
     {
-        var skill = new CreateGroupSkill(_groupRepository, TestGroupScopeGuard.Unrestricted(), _calendarSelectionRepository, new GroupMapper(), _api.Client);
+        var skill = new CreateGroupSkill(_groupRepository, TestGroupScopeGuard.Unrestricted(), _calendarSelectionRepository, new GroupMapper(), _api.Client, _companyClock);
         var parentId = Guid.NewGuid();
         _groupRepository.Get(parentId).Returns((Group?)null);
         var parameters = new Dictionary<string, object>
@@ -85,7 +89,7 @@ public class GroupCrudSkillTests
     [Test]
     public async Task CreateGroup_AtRoot_AddsGroupAndCompletes()
     {
-        var skill = new CreateGroupSkill(_groupRepository, TestGroupScopeGuard.Unrestricted(), _calendarSelectionRepository, new GroupMapper(), _api.Client);
+        var skill = new CreateGroupSkill(_groupRepository, TestGroupScopeGuard.Unrestricted(), _calendarSelectionRepository, new GroupMapper(), _api.Client, _companyClock);
         var parameters = new Dictionary<string, object> { ["name"] = "Bern" };
 
         var result = await skill.ExecuteAsync(Ctx(), parameters);
@@ -98,7 +102,7 @@ public class GroupCrudSkillTests
     [Test]
     public async Task CreateGroup_SuccessMessage_CarriesVerifiedMarker()
     {
-        var skill = new CreateGroupSkill(_groupRepository, TestGroupScopeGuard.Unrestricted(), _calendarSelectionRepository, new GroupMapper(), _api.Client);
+        var skill = new CreateGroupSkill(_groupRepository, TestGroupScopeGuard.Unrestricted(), _calendarSelectionRepository, new GroupMapper(), _api.Client, _companyClock);
         var parameters = new Dictionary<string, object> { ["name"] = "Bern" };
 
         var result = await skill.ExecuteAsync(Ctx(), parameters);
@@ -292,7 +296,7 @@ public class GroupCrudSkillTests
         var scopedRootId = Guid.NewGuid();
         var skill = new CreateGroupSkill(
             _groupRepository, TestGroupScopeGuard.Restricted(new[] { scopedRootId }, "Verkauf"),
-            _calendarSelectionRepository, new GroupMapper(), _api.Client);
+            _calendarSelectionRepository, new GroupMapper(), _api.Client, _companyClock);
         var parameters = new Dictionary<string, object> { ["name"] = "Neue Wurzel" };
 
         var result = await skill.ExecuteAsync(Ctx(), parameters);
@@ -351,7 +355,7 @@ public class GroupCrudSkillTests
         var scopedRootId = Guid.NewGuid();
         var skill = new CreateGroupSkill(
             _groupRepository, TestGroupScopeGuard.Restricted(new[] { scopedRootId }, "Verkauf"),
-            _calendarSelectionRepository, new GroupMapper(), _api.Client);
+            _calendarSelectionRepository, new GroupMapper(), _api.Client, _companyClock);
         var parentId = Guid.NewGuid();
         _groupRepository.Get(parentId).Returns(new Group { Id = parentId, Name = "Verkauf Nord", Root = scopedRootId });
         var parameters = new Dictionary<string, object>

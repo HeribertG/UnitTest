@@ -11,6 +11,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using Microsoft.AspNetCore.Http;
 using Klacks.Api.Domain.Interfaces;
+using Klacks.UnitTest.TestHelpers;
 using NSubstitute;
 
 namespace Klacks.UnitTest.Repository;
@@ -40,7 +41,9 @@ public class ShiftRepositoryTests
         var collectionUpdateService = new EntityCollectionUpdateService(_context);
         var mockShiftValidator = Substitute.For<IShiftValidator>();
         var scheduleMapper = new ScheduleMapper();
-        _repository = new ShiftRepository(_context, _mockLogger, _mockQueryPipeline, _mockShiftGroupManagementService, collectionUpdateService, mockShiftValidator, scheduleMapper);
+        _repository = new ShiftRepository(
+            _context, _mockLogger, _mockQueryPipeline, _mockShiftGroupManagementService, collectionUpdateService,
+            mockShiftValidator, scheduleMapper, new FixedCompanyClock(DateTimeOffset.UtcNow));
     }
 
     [Test]
@@ -377,7 +380,7 @@ public class ShiftRepositoryTests
             .ApplyStatusFilter(Arg.Any<IQueryable<Shift>>(), Arg.Any<ShiftFilterType>(), Arg.Any<bool>(), Arg.Any<bool>(), Arg.Any<bool>())
             .Returns(args => (IQueryable<Shift>)args[0]);
         _mockQueryPipeline
-            .ApplyDateRangeFilter(Arg.Any<IQueryable<Shift>>(), Arg.Any<bool>(), Arg.Any<bool>(), Arg.Any<bool>())
+            .ApplyDateRangeFilter(Arg.Any<IQueryable<Shift>>(), Arg.Any<bool>(), Arg.Any<bool>(), Arg.Any<bool>(), Arg.Any<DateOnly>())
             .Returns(args => (IQueryable<Shift>)args[0]);
         _mockQueryPipeline
             .ApplySearchFilter(Arg.Any<IQueryable<Shift>>(), Arg.Any<string>(), Arg.Any<bool>())
@@ -387,7 +390,7 @@ public class ShiftRepositoryTests
             .Returns(args => (IQueryable<Shift>)args[0]);
 
         // Act
-        var result = _repository.FilterShifts(filter).ToList();
+        var result = _repository.FilterShifts(filter, DateOnly.FromDateTime(DateTime.UtcNow)).ToList();
 
         // Assert
         result.Count().ShouldBe(1);
@@ -426,7 +429,7 @@ public class ShiftRepositoryTests
             .ApplyStatusFilter(Arg.Any<IQueryable<Shift>>(), Arg.Any<ShiftFilterType>(), Arg.Any<bool>(), Arg.Any<bool>(), Arg.Any<bool>())
             .Returns(args => (IQueryable<Shift>)args[0]);
         _mockQueryPipeline
-            .ApplyDateRangeFilter(Arg.Any<IQueryable<Shift>>(), Arg.Any<bool>(), Arg.Any<bool>(), Arg.Any<bool>())
+            .ApplyDateRangeFilter(Arg.Any<IQueryable<Shift>>(), Arg.Any<bool>(), Arg.Any<bool>(), Arg.Any<bool>(), Arg.Any<DateOnly>())
             .Returns(args => (IQueryable<Shift>)args[0]);
         _mockQueryPipeline
             .ApplySearchFilter(Arg.Any<IQueryable<Shift>>(), Arg.Any<string>(), Arg.Any<bool>())
@@ -436,7 +439,7 @@ public class ShiftRepositoryTests
             .Returns(args => (IQueryable<Shift>)args[0]);
 
         // Act
-        var result = _repository.FilterShifts(filter).ToList();
+        var result = _repository.FilterShifts(filter, DateOnly.FromDateTime(DateTime.UtcNow)).ToList();
 
         // Assert
         result.Count().ShouldBe(1);
@@ -479,7 +482,7 @@ public class ShiftRepositoryTests
             .ApplyStatusFilter(Arg.Any<IQueryable<Shift>>(), Arg.Any<ShiftFilterType>(), Arg.Any<bool>(), Arg.Any<bool>(), Arg.Any<bool>())
             .Returns(args => (IQueryable<Shift>)args[0]);
         _mockQueryPipeline
-            .ApplyDateRangeFilter(Arg.Any<IQueryable<Shift>>(), Arg.Any<bool>(), Arg.Any<bool>(), Arg.Any<bool>())
+            .ApplyDateRangeFilter(Arg.Any<IQueryable<Shift>>(), Arg.Any<bool>(), Arg.Any<bool>(), Arg.Any<bool>(), Arg.Any<DateOnly>())
             .Returns(args => (IQueryable<Shift>)args[0]);
         _mockQueryPipeline
             .ApplySearchFilter(Arg.Any<IQueryable<Shift>>(), Arg.Any<string>(), Arg.Any<bool>())
@@ -489,7 +492,7 @@ public class ShiftRepositoryTests
             .Returns(args => (IQueryable<Shift>)args[0]);
 
         // Act
-        var result = _repository.FilterShifts(filter).ToList();
+        var result = _repository.FilterShifts(filter, DateOnly.FromDateTime(DateTime.UtcNow)).ToList();
 
         // Assert
         result.ShouldBeEmpty();
@@ -559,7 +562,7 @@ public class ShiftRepositoryTests
             .ApplyStatusFilter(Arg.Any<IQueryable<Shift>>(), Arg.Any<ShiftFilterType>(), Arg.Any<bool>(), Arg.Any<bool>(), Arg.Any<bool>())
             .Returns(args => (IQueryable<Shift>)args[0]);
         _mockQueryPipeline
-            .ApplyDateRangeFilter(Arg.Any<IQueryable<Shift>>(), Arg.Any<bool>(), Arg.Any<bool>(), Arg.Any<bool>())
+            .ApplyDateRangeFilter(Arg.Any<IQueryable<Shift>>(), Arg.Any<bool>(), Arg.Any<bool>(), Arg.Any<bool>(), Arg.Any<DateOnly>())
             .Returns(args => (IQueryable<Shift>)args[0]);
         _mockQueryPipeline
             .ApplySearchFilter(Arg.Any<IQueryable<Shift>>(), Arg.Any<string>(), Arg.Any<bool>())
@@ -569,7 +572,7 @@ public class ShiftRepositoryTests
             .Returns(args => (IQueryable<Shift>)args[0]);
 
         // Act
-        var result = _repository.FilterShifts(filter).ToList();
+        var result = _repository.FilterShifts(filter, DateOnly.FromDateTime(DateTime.UtcNow)).ToList();
 
         // Assert
         result.Count().ShouldBe(2);
@@ -614,9 +617,9 @@ public class ShiftRepositoryTests
             .ApplySorting(Arg.Any<IQueryable<Shift>>(), Arg.Any<string>(), Arg.Any<string>())
             .Returns(args => (IQueryable<Shift>)args[0]);
 
-        var result = _repository.FilterShifts(filter).ToList();
+        var result = _repository.FilterShifts(filter, DateOnly.FromDateTime(DateTime.UtcNow)).ToList();
 
-        _mockQueryPipeline.DidNotReceiveWithAnyArgs().ApplyDateRangeFilter(default!, default, default, default);
+        _mockQueryPipeline.DidNotReceiveWithAnyArgs().ApplyDateRangeFilter(default!, default, default, default, default);
         result.ShouldContain(s => s.Id == draftFarInFuture.Id);
     }
 
@@ -644,7 +647,7 @@ public class ShiftRepositoryTests
             .ApplyStatusFilter(Arg.Any<IQueryable<Shift>>(), Arg.Any<ShiftFilterType>(), Arg.Any<bool>(), Arg.Any<bool>(), Arg.Any<bool>())
             .Returns(args => (IQueryable<Shift>)args[0]);
         _mockQueryPipeline
-            .ApplyDateRangeFilter(Arg.Any<IQueryable<Shift>>(), Arg.Any<bool>(), Arg.Any<bool>(), Arg.Any<bool>())
+            .ApplyDateRangeFilter(Arg.Any<IQueryable<Shift>>(), Arg.Any<bool>(), Arg.Any<bool>(), Arg.Any<bool>(), Arg.Any<DateOnly>())
             .Returns(args => (IQueryable<Shift>)args[0]);
         _mockQueryPipeline
             .ApplySearchFilter(Arg.Any<IQueryable<Shift>>(), Arg.Any<string>(), Arg.Any<bool>())
@@ -653,9 +656,9 @@ public class ShiftRepositoryTests
             .ApplySorting(Arg.Any<IQueryable<Shift>>(), Arg.Any<string>(), Arg.Any<string>())
             .Returns(args => (IQueryable<Shift>)args[0]);
 
-        _repository.FilterShifts(filter).ToList();
+        _repository.FilterShifts(filter, DateOnly.FromDateTime(DateTime.UtcNow)).ToList();
 
-        _mockQueryPipeline.Received(1).ApplyDateRangeFilter(Arg.Any<IQueryable<Shift>>(), true, false, false);
+        _mockQueryPipeline.Received(1).ApplyDateRangeFilter(Arg.Any<IQueryable<Shift>>(), true, false, false, Arg.Any<DateOnly>());
     }
 
     [TearDown]

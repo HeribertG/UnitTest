@@ -32,6 +32,7 @@ public class ErpOrderImportRunnerTests
     private IAgentTriggerService _triggerService = null!;
     private IErpImportExceptionRepository _exceptionRepository = null!;
     private ISettingsRepository _settingsRepository = null!;
+    private FixedCompanyClock _companyClock = null!;
     private IUnitOfWork _unitOfWork = null!;
     private ErpImportRunState _runState = null!;
     private ErpOrderImportRunner _runner = null!;
@@ -58,6 +59,7 @@ public class ErpOrderImportRunnerTests
         _triggerService = Substitute.For<IAgentTriggerService>();
         _exceptionRepository = Substitute.For<IErpImportExceptionRepository>();
         _settingsRepository = Substitute.For<ISettingsRepository>();
+        _companyClock = new FixedCompanyClock(DateTimeOffset.UtcNow, TimeZoneInfo.Utc);
         _unitOfWork = Substitute.For<IUnitOfWork>();
 
         _unitOfWork.ExecuteInTransactionAsync(Arg.Any<Func<Task<bool>>>())
@@ -77,8 +79,8 @@ public class ErpOrderImportRunnerTests
         _runState = new ErpImportRunState();
 
         var resolver = new ErpCustomerResolver(_clientRepository);
-        var supersessionService = new OrderSupersessionService(_shiftRepository, _workRepository, _clientRepository, _triggerService, ShiftGroupScopeReaderStub.WithoutAnyGroups(), _unitOfWork, NullLogger<OrderSupersessionService>.Instance);
-        _runner = new ErpOrderImportRunner(_dropPointRepository, _defaultDropPointProvider, _objectStorageService, _parser, resolver, _shiftRepository, supersessionService, _exceptionRepository, _triggerService, _settingsRepository, _unitOfWork, _runState, NullLogger<ErpOrderImportRunner>.Instance);
+        var supersessionService = new OrderSupersessionService(_shiftRepository, _workRepository, _clientRepository, _triggerService, ShiftGroupScopeReaderStub.WithoutAnyGroups(), _unitOfWork, _companyClock, NullLogger<OrderSupersessionService>.Instance);
+        _runner = new ErpOrderImportRunner(_dropPointRepository, _defaultDropPointProvider, _objectStorageService, _parser, resolver, _shiftRepository, supersessionService, _exceptionRepository, _triggerService, _settingsRepository, _companyClock, _unitOfWork, _runState, NullLogger<ErpOrderImportRunner>.Instance);
     }
 
     private static ImportedOrderPayload Order(string reference = "ORD-1") => new()

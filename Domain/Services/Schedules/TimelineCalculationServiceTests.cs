@@ -1,6 +1,8 @@
 using Klacks.Api.Domain.Enums;
 using Klacks.Api.Domain.Models.Schedules;
 using Klacks.Api.Domain.Services.Schedules;
+using Klacks.UnitTest.TestHelpers;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 
@@ -461,5 +463,21 @@ public class TimelineCalculationServiceTests
 
         var workBlock = blocks.First(b => b.BlockType == ScheduleBlockType.Work);
         workBlock.ShiftId.ShouldNotBeNull();
+    }
+
+    [Test]
+    public void Constructor_DstAwareWithEmptyTimeZoneId_LogsErrorAndTreatsDstAwareAsOff()
+    {
+        var logger = new RecordingLogger<TimelineCalculationService>();
+        var service = new TimelineCalculationService(
+            Options.Create(new ScheduleTimeOptions { DstAware = true, TimeZoneId = "" }),
+            logger);
+
+        var work = CreateWork(new TimeOnly(22, 0), new TimeOnly(6, 0));
+        var blocks = service.CalculateScheduleBlocks([work], [], []);
+
+        blocks[0].Start.Kind.ShouldBe(DateTimeKind.Unspecified);
+        blocks[0].Start.ShouldBe(BaseDate.ToDateTime(new TimeOnly(22, 0)));
+        logger.Entries.ShouldContain(e => e.Level == LogLevel.Error);
     }
 }

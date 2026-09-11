@@ -26,6 +26,7 @@ public static class SkillFeatureCoverageMap
         ["AgentTriggerPreferencesController"] = Excluded("Klacksy assistant self-configuration: per-user trigger mute/snooze managed in the assistant settings UI"),
         ["AgentsController"] = Excluded("Klacksy assistant administration (agent registry), assistant infrastructure"),
         ["ChatController"] = Excluded("Klacksy chat pipeline itself: the host that executes skills, covering it with skills would be circular"),
+        ["CompanyClockController"] = Excluded("read-only company time-zone/today snapshot for the UI (calendar rendering, non-admin readable); same audience and facts as the get_current_time skill, which already covers this for chat"),
         ["CustomSttProviderController"] = Excluded("voice STT provider plumbing; configuration visibility via get_speech_settings"),
         ["DocsController"] = Excluded("serves embedded assistant documentation, internal infrastructure"),
         ["EscalationChainsController"] = Gap("escalation intervention list (list running chains, acknowledge/cancel); Owner decision B7 scopes cancel to admins and this chain's roster members, not chat-wide, so a skill would need the same scoping before this can be chat-addressable"),

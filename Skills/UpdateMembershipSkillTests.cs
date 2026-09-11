@@ -6,12 +6,19 @@ using Klacks.Api.Application.DTOs.Staffs;
 using Klacks.Api.Application.Queries;
 using Klacks.Api.Application.Skills;
 using Klacks.Api.Infrastructure.Mediator;
+using Klacks.UnitTest.TestHelpers;
 
 namespace Klacks.UnitTest.Skills;
 
 [TestFixture]
 public class UpdateMembershipSkillTests
 {
+    // Pacific/Auckland edge case: 23:30 UTC on 27.06 is already 11:30 NZST (+12, no June DST) on 28.06 -
+    // proves "heute" resolves to the company's local calendar day, not the UTC day.
+    private static readonly TimeZoneInfo Auckland = TimeZoneInfo.FindSystemTimeZoneById("Pacific/Auckland");
+    private static readonly DateTimeOffset AucklandNowUtc = new(2026, 6, 27, 23, 30, 0, TimeSpan.Zero);
+    private static readonly DateTime CompanyToday = new(2026, 6, 28, 0, 0, 0, DateTimeKind.Utc);
+
     private static SkillExecutionContext Ctx() => new()
     {
         UserId = Guid.NewGuid(),
@@ -36,7 +43,10 @@ public class UpdateMembershipSkillTests
     {
         mediator.Send(Arg.Any<GetQuery<ClientResource>>(), Arg.Any<CancellationToken>())
             .Returns(client ?? new ClientResource());
-        return new UpdateMembershipSkill(mediator, store ?? Substitute.For<IPendingConfirmationStore>());
+        return new UpdateMembershipSkill(
+            mediator,
+            store ?? Substitute.For<IPendingConfirmationStore>(),
+            new FixedCompanyClock(AucklandNowUtc, Auckland));
     }
 
     [Test]
@@ -64,6 +74,72 @@ public class UpdateMembershipSkillTests
                 c.Resource.ValidFrom == new DateTime(2026, 3, 1) &&
                 c.Resource.Type == 1),
             Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task UpdateValidFrom_PersistsKindUtc_SoNpgsqlAcceptsTheTimestamptzWrite()
+    {
+        var membershipId = Guid.NewGuid();
+        var mediator = Substitute.For<IMediator>();
+        mediator.Send(Arg.Any<GetQuery<MembershipResource>>(), Arg.Any<CancellationToken>())
+            .Returns(Membership(membershipId));
+        mediator.Send(Arg.Any<PutCommand<MembershipResource>>(), Arg.Any<CancellationToken>())
+            .Returns(ci => ((PutCommand<MembershipResource>)ci[0]).Resource);
+        var skill = Skill(mediator);
+
+        var result = await skill.ExecuteAsync(Ctx(), new Dictionary<string, object>
+        {
+            ["membershipId"] = membershipId.ToString(),
+            ["validFrom"] = "2026-03-01"
+        });
+
+        result.Success.ShouldBeTrue();
+        await mediator.Received(1).Send(
+            Arg.Is<PutCommand<MembershipResource>>(c => c.Resource.ValidFrom.Kind == DateTimeKind.Utc),
+            Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task UpdateValidFrom_TodayWord_ResolvesToCompanyToday()
+    {
+        var membershipId = Guid.NewGuid();
+        var mediator = Substitute.For<IMediator>();
+        mediator.Send(Arg.Any<GetQuery<MembershipResource>>(), Arg.Any<CancellationToken>())
+            .Returns(Membership(membershipId));
+        mediator.Send(Arg.Any<PutCommand<MembershipResource>>(), Arg.Any<CancellationToken>())
+            .Returns(ci => ((PutCommand<MembershipResource>)ci[0]).Resource);
+        var skill = Skill(mediator);
+
+        var result = await skill.ExecuteAsync(Ctx(), new Dictionary<string, object>
+        {
+            ["membershipId"] = membershipId.ToString(),
+            ["validFrom"] = "heute"
+        });
+
+        result.Success.ShouldBeTrue(result.Message);
+        await mediator.Received(1).Send(
+            Arg.Is<PutCommand<MembershipResource>>(c =>
+                c.Resource.ValidFrom == CompanyToday && c.Resource.ValidFrom.Kind == DateTimeKind.Utc),
+            Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task UpdateValidFrom_UnreadableDate_ReturnsError_NoMutation()
+    {
+        var membershipId = Guid.NewGuid();
+        var mediator = Substitute.For<IMediator>();
+        mediator.Send(Arg.Any<GetQuery<MembershipResource>>(), Arg.Any<CancellationToken>())
+            .Returns(Membership(membershipId));
+        var skill = Skill(mediator);
+
+        var result = await skill.ExecuteAsync(Ctx(), new Dictionary<string, object>
+        {
+            ["membershipId"] = membershipId.ToString(),
+            ["validFrom"] = "not-a-date"
+        });
+
+        result.Success.ShouldBeFalse();
+        await mediator.DidNotReceive().Send(Arg.Any<PutCommand<MembershipResource>>(), Arg.Any<CancellationToken>());
     }
 
     [Test]

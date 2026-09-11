@@ -97,6 +97,30 @@ public class UpdateAddressSkillTests
     }
 
     [Test]
+    public async Task UpdateValidFrom_PersistsKindUtc_SoNpgsqlAcceptsTheTimestamptzWrite()
+    {
+        var id = Guid.NewGuid();
+        var address = Address(id);
+        var mediator = Substitute.For<IMediator>();
+        mediator.Send(Arg.Any<GetQuery<AddressResource>>(), Arg.Any<CancellationToken>())
+            .Returns(address);
+        mediator.Send(Arg.Any<PutCommand<AddressResource>>(), Arg.Any<CancellationToken>())
+            .Returns(ci => ((PutCommand<AddressResource>)ci[0]).Resource);
+        var skill = new UpdateAddressSkill(mediator);
+
+        var result = await skill.ExecuteAsync(Ctx(), new Dictionary<string, object>
+        {
+            ["addressId"] = id.ToString(),
+            ["validFrom"] = "2026-09-01"
+        });
+
+        result.Success.ShouldBeTrue();
+        await mediator.Received(1).Send(
+            Arg.Is<PutCommand<AddressResource>>(c => c.Resource.ValidFrom!.Value.Kind == DateTimeKind.Utc),
+            Arg.Any<CancellationToken>());
+    }
+
+    [Test]
     public async Task InvalidValidFrom_ReturnsError_NoPut()
     {
         var id = Guid.NewGuid();

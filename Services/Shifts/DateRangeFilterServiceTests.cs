@@ -1,4 +1,4 @@
-﻿using Shouldly;
+using Shouldly;
 using Klacks.Api.Domain.Models.Schedules;
 using Klacks.Api.Domain.Services.Shifts;
 
@@ -9,170 +9,36 @@ public class DateRangeFilterServiceTests
 {
     private DateRangeFilterService _service;
     private List<Shift> _testShifts;
+    private DateOnly _today;
 
     [SetUp]
     public void SetUp()
     {
         _service = new DateRangeFilterService();
-        
-        var now = DateTime.Now;
-        var today = DateOnly.FromDateTime(now);
-        
+
+        _today = DateOnly.FromDateTime(DateTime.UtcNow);
+        var today = _today;
+
         _testShifts = new List<Shift>
         {
             // Active shift (started yesterday, ends tomorrow)
             new Shift { Id = Guid.NewGuid(), Name = "Active Shift", FromDate = today.AddDays(-1), UntilDate = today.AddDays(1) },
-            
+
             // Former shift (ended yesterday)
             new Shift { Id = Guid.NewGuid(), Name = "Former Shift", FromDate = today.AddDays(-10), UntilDate = today.AddDays(-1) },
-            
+
             // Future shift (starts tomorrow)
             new Shift { Id = Guid.NewGuid(), Name = "Future Shift", FromDate = today.AddDays(1), UntilDate = today.AddDays(5) },
-            
+
             // Active shift with no end date
             new Shift { Id = Guid.NewGuid(), Name = "Active No End", FromDate = today.AddDays(-5), UntilDate = null },
-            
+
             // Edge case: starts today
             new Shift { Id = Guid.NewGuid(), Name = "Starts Today", FromDate = today, UntilDate = today.AddDays(3) },
-            
+
             // Edge case: ends today
             new Shift { Id = Guid.NewGuid(), Name = "Ends Today", FromDate = today.AddDays(-3), UntilDate = today }
         };
-    }
-
-    [Test]
-    public void IsActiveShift_WithActiveShift_ReturnsTrue()
-    {
-        // Arrange
-        var today = DateOnly.FromDateTime(DateTime.Now);
-        var fromDate = today.AddDays(-1);
-        var untilDate = today.AddDays(1);
-
-        // Act
-        var result = _service.IsActiveShift(fromDate, untilDate);
-
-        // Assert
-        result.ShouldBeTrue();
-    }
-
-    [Test]
-    public void IsActiveShift_WithFormerShift_ReturnsFalse()
-    {
-        // Arrange
-        var today = DateOnly.FromDateTime(DateTime.Now);
-        var fromDate = today.AddDays(-10);
-        var untilDate = today.AddDays(-1);
-
-        // Act
-        var result = _service.IsActiveShift(fromDate, untilDate);
-
-        // Assert
-        result.ShouldBeFalse();
-    }
-
-    [Test]
-    public void IsActiveShift_WithFutureShift_ReturnsFalse()
-    {
-        // Arrange
-        var today = DateOnly.FromDateTime(DateTime.Now);
-        var fromDate = today.AddDays(1);
-        var untilDate = today.AddDays(5);
-
-        // Act
-        var result = _service.IsActiveShift(fromDate, untilDate);
-
-        // Assert
-        result.ShouldBeFalse();
-    }
-
-    [Test]
-    public void IsActiveShift_WithNoEndDate_ReturnsTrue()
-    {
-        // Arrange
-        var today = DateOnly.FromDateTime(DateTime.Now);
-        var fromDate = today.AddDays(-5);
-        DateOnly? untilDate = null;
-
-        // Act
-        var result = _service.IsActiveShift(fromDate, untilDate);
-
-        // Assert
-        result.ShouldBeTrue();
-    }
-
-    [Test]
-    public void IsFormerShift_WithFormerShift_ReturnsTrue()
-    {
-        // Arrange
-        var today = DateOnly.FromDateTime(DateTime.Now);
-        var fromDate = today.AddDays(-10);
-        var untilDate = today.AddDays(-1);
-
-        // Act
-        var result = _service.IsFormerShift(fromDate, untilDate);
-
-        // Assert
-        result.ShouldBeTrue();
-    }
-
-    [Test]
-    public void IsFormerShift_WithActiveShift_ReturnsFalse()
-    {
-        // Arrange
-        var today = DateOnly.FromDateTime(DateTime.Now);
-        var fromDate = today.AddDays(-1);
-        var untilDate = today.AddDays(1);
-
-        // Act
-        var result = _service.IsFormerShift(fromDate, untilDate);
-
-        // Assert
-        result.ShouldBeFalse();
-    }
-
-    [Test]
-    public void IsFormerShift_WithNoEndDate_ReturnsFalse()
-    {
-        // Arrange
-        var today = DateOnly.FromDateTime(DateTime.Now);
-        var fromDate = today.AddDays(-5);
-        DateOnly? untilDate = null;
-
-        // Act
-        var result = _service.IsFormerShift(fromDate, untilDate);
-
-        // Assert
-        result.ShouldBeFalse();
-    }
-
-    [Test]
-    public void IsFutureShift_WithFutureShift_ReturnsTrue()
-    {
-        // Arrange
-        var today = DateOnly.FromDateTime(DateTime.Now);
-        var fromDate = today.AddDays(1);
-        var untilDate = today.AddDays(5);
-
-        // Act
-        var result = _service.IsFutureShift(fromDate, untilDate);
-
-        // Assert
-        result.ShouldBeTrue();
-    }
-
-    [Test]
-    public void IsFutureShift_WithActiveShift_ReturnsFalse()
-    {
-        // Arrange
-        var today = DateOnly.FromDateTime(DateTime.Now);
-        var fromDate = today.AddDays(-1);
-        var untilDate = today.AddDays(1);
-
-        // Act
-        var result = _service.IsFutureShift(fromDate, untilDate);
-
-        // Assert
-        result.ShouldBeFalse();
     }
 
     [Test]
@@ -182,7 +48,7 @@ public class DateRangeFilterServiceTests
         var query = _testShifts.AsQueryable();
 
         // Act
-        var result = _service.ApplyDateRangeFilter(query, activeDateRange: true, formerDateRange: false, futureDateRange: false);
+        var result = _service.ApplyDateRangeFilter(query, activeDateRange: true, formerDateRange: false, futureDateRange: false, today: _today);
         var shifts = result.ToList();
 
         // Assert
@@ -200,7 +66,7 @@ public class DateRangeFilterServiceTests
         var query = _testShifts.AsQueryable();
 
         // Act
-        var result = _service.ApplyDateRangeFilter(query, activeDateRange: false, formerDateRange: true, futureDateRange: false);
+        var result = _service.ApplyDateRangeFilter(query, activeDateRange: false, formerDateRange: true, futureDateRange: false, today: _today);
         var shifts = result.ToList();
 
         // Assert
@@ -215,7 +81,7 @@ public class DateRangeFilterServiceTests
         var query = _testShifts.AsQueryable();
 
         // Act
-        var result = _service.ApplyDateRangeFilter(query, activeDateRange: false, formerDateRange: false, futureDateRange: true);
+        var result = _service.ApplyDateRangeFilter(query, activeDateRange: false, formerDateRange: false, futureDateRange: true, today: _today);
         var shifts = result.ToList();
 
         // Assert
@@ -230,7 +96,7 @@ public class DateRangeFilterServiceTests
         var query = _testShifts.AsQueryable();
 
         // Act
-        var result = _service.ApplyDateRangeFilter(query, activeDateRange: true, formerDateRange: true, futureDateRange: true);
+        var result = _service.ApplyDateRangeFilter(query, activeDateRange: true, formerDateRange: true, futureDateRange: true, today: _today);
         var shifts = result.ToList();
 
         // Assert
@@ -244,7 +110,7 @@ public class DateRangeFilterServiceTests
         var query = _testShifts.AsQueryable();
 
         // Act
-        var result = _service.ApplyDateRangeFilter(query, activeDateRange: false, formerDateRange: false, futureDateRange: false);
+        var result = _service.ApplyDateRangeFilter(query, activeDateRange: false, formerDateRange: false, futureDateRange: false, today: _today);
         var shifts = result.ToList();
 
         // Assert
@@ -258,11 +124,28 @@ public class DateRangeFilterServiceTests
         var query = _testShifts.AsQueryable();
 
         // Act
-        var result = _service.ApplyDateRangeFilter(query, activeDateRange: true, formerDateRange: true, futureDateRange: false);
+        var result = _service.ApplyDateRangeFilter(query, activeDateRange: true, formerDateRange: true, futureDateRange: false, today: _today);
         var shifts = result.ToList();
 
         // Assert
         shifts.Count().ShouldBe(5); // All except Future Shift (4 active + 1 former)
         shifts.ShouldNotContain(s => s.Name == "Future Shift");
+    }
+
+    [Test]
+    public void ApplyDateRangeFilter_AucklandCompanyDayAcrossUtcMidnight_UsesCompanyDayNotUtcDay()
+    {
+        // The company day (Pacific/Auckland) is 2026-06-28 at the UTC instant 2026-06-27T23:30Z. A
+        // shift starting exactly on 2026-06-28 must be classified active once the caller resolves
+        // "today" as the company day, even though the UTC day is still 2026-06-27.
+        var companyDay = new DateOnly(2026, 6, 28);
+        var shift = new Shift { Id = Guid.NewGuid(), Name = "Starts On Company Day", FromDate = companyDay, UntilDate = companyDay.AddDays(2) };
+        var query = new List<Shift> { shift }.AsQueryable();
+
+        var activeUnderCompanyDay = _service.ApplyDateRangeFilter(query, true, false, false, companyDay).ToList();
+        var activeUnderWrongUtcDay = _service.ApplyDateRangeFilter(query, true, false, false, companyDay.AddDays(-1)).ToList();
+
+        activeUnderCompanyDay.ShouldContain(s => s.Id == shift.Id);
+        activeUnderWrongUtcDay.ShouldNotContain(s => s.Id == shift.Id);
     }
 }

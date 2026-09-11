@@ -13,6 +13,7 @@ using Klacks.Api.Infrastructure.Mediator;
 using Klacks.Api.Infrastructure.Services.Schedules;
 using Klacks.ScheduleOptimizer.Models;
 using Klacks.Api.Infrastructure.Persistence;
+using Klacks.UnitTest.TestHelpers;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging.Abstractions;
 using NSubstitute;
@@ -70,6 +71,7 @@ public class WizardApplyServiceCaptureTests
             _partitionService,
             BuildInMemoryContext(),
             Substitute.For<IScheduleTimelineService>(),
+            new FixedCompanyClock(new DateTimeOffset(2026, 4, 20, 0, 0, 0, TimeSpan.Zero)),
             NullLogger<WizardApplyService>.Instance);
 
         // The real unit of work runs the delegate inside a transaction; the substitute must do the same

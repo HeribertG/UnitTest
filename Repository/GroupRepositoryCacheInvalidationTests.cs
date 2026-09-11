@@ -6,6 +6,7 @@ using Klacks.Api.Infrastructure.Persistence;
 using Klacks.Api.Infrastructure.Repositories;
 using Klacks.Api.Application.DTOs.Filter;
 using Klacks.Api.Domain.DTOs.Filter;
+using Klacks.UnitTest.TestHelpers;
 using Microsoft.AspNetCore.Http;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
@@ -104,7 +105,7 @@ public class GroupRepositoryCacheInvalidationTests
             return Task.CompletedTask;
         });
 
-        mockSearchService.ApplyFilters(Arg.Any<IQueryable<Group>>(), Arg.Any<GroupFilter>())
+        mockSearchService.ApplyFilters(Arg.Any<IQueryable<Group>>(), Arg.Any<GroupFilter>(), Arg.Any<DateOnly>())
             .Returns(info => info.Arg<IQueryable<Group>>());
 
         mockMembershipService.UpdateGroupMembershipAsync(Arg.Any<Guid>(), Arg.Any<IEnumerable<Guid>>())
@@ -119,7 +120,8 @@ public class GroupRepositoryCacheInvalidationTests
         _mockGroupServiceFacade.IntegrityService.Returns(mockIntegrityService);
 
         var mockLogger = Substitute.For<ILogger<Group>>();
-        _groupRepository = new GroupRepository(_context, _mockGroupServiceFacade, _groupCacheService, mockLogger);
+        _groupRepository = new GroupRepository(
+            _context, _mockGroupServiceFacade, _groupCacheService, mockLogger, new FixedCompanyClock(DateTimeOffset.UtcNow));
     }
 
     [TearDown]

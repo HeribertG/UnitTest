@@ -12,6 +12,7 @@ using Klacks.Api.Domain.Common;
 using Klacks.Api.Domain.Models.Assistant;
 using Klacks.Api.Domain.Models.Schedules;
 using Klacks.Api.Domain.Models.Staffs;
+using Klacks.UnitTest.TestHelpers;
 
 namespace Klacks.UnitTest.Skills;
 
@@ -50,7 +51,8 @@ public class GetClientAbsenceSummarySkillTests
             .Returns(new List<Break>());
 
         _skill = new GetClientAbsenceSummarySkill(
-            _clientRepository, _breakPlaceholderRepository, _breakRepository, _absenceRepository);
+            _clientRepository, _breakPlaceholderRepository, _breakRepository, _absenceRepository,
+            new FixedCompanyClock(new DateTimeOffset(2026, 6, 15, 0, 0, 0, TimeSpan.Zero)));
     }
 
     private static SkillExecutionContext Context() => new()

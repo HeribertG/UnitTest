@@ -8,6 +8,7 @@ using Klacks.Api.Application.Mappers;
 using Klacks.Api.Infrastructure.Repositories;
 using Klacks.Api.Infrastructure.Services;
 using Klacks.Api.Domain.Interfaces;
+using Klacks.UnitTest.TestHelpers;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Logging;
@@ -36,7 +37,9 @@ public class ShiftExpensesRepositoryTests
         var collectionUpdateService = new EntityCollectionUpdateService(_context);
         var mockShiftValidator = Substitute.For<IShiftValidator>();
         var scheduleMapper = new ScheduleMapper();
-        _repository = new ShiftRepository(_context, mockLogger, mockQueryPipeline, mockGroupManagement, collectionUpdateService, mockShiftValidator, scheduleMapper);
+        _repository = new ShiftRepository(
+            _context, mockLogger, mockQueryPipeline, mockGroupManagement, collectionUpdateService, mockShiftValidator,
+            scheduleMapper, new FixedCompanyClock(DateTimeOffset.UtcNow));
     }
 
     [Test]

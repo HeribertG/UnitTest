@@ -9,6 +9,7 @@
 using Klacks.Api.Application.Services.Assistant.Triggers;
 using Klacks.Api.Domain.Constants;
 using Klacks.Api.Domain.DTOs.Assistant;
+using Klacks.UnitTest.TestHelpers;
 using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Klacks.UnitTest.Services.Assistant;
@@ -29,9 +30,8 @@ public class AvailabilityGapDetectorTests
 
     private AvailabilityGapDetector CreateSut(DateOnly today)
     {
-        var tp = Substitute.For<TimeProvider>();
-        tp.GetUtcNow().Returns(new DateTimeOffset(today.ToDateTime(TimeOnly.MinValue, DateTimeKind.Utc)));
-        return new AvailabilityGapDetector(_repo, NullLogger<AvailabilityGapDetector>.Instance, tp);
+        var clock = new FixedCompanyClock(new DateTimeOffset(today.ToDateTime(TimeOnly.MinValue, DateTimeKind.Utc)));
+        return new AvailabilityGapDetector(_repo, NullLogger<AvailabilityGapDetector>.Instance, clock);
     }
 
     private void StubClients(params PlannableClientInfo[] clients)
@@ -91,6 +91,29 @@ public class AvailabilityGapDetectorTests
 
         Assert.That(events, Has.Count.EqualTo(1));
         Assert.That(events[0].Severity, Is.EqualTo(AgentTriggerSeverity.High));
+    }
+
+    [Test]
+    public async Task DetectAsync_AucklandCompanyDayAcrossUtcMidnight_UsesCompanyDayNotUtcDay()
+    {
+        // UTC instant 2026-06-27T23:30Z is still 27.06 in UTC but already 28.06 11:30 in Pacific/Auckland
+        // (+12:00, no DST in the southern-hemisphere winter). Next calendar month is July either way, so
+        // daysUntilPeriodStart distinguishes the two: 4 under (wrong) UTC day, 3 under the (correct)
+        // company day.
+        var instant = DateTimeOffset.Parse(
+            "2026-06-27T23:30:00Z", System.Globalization.CultureInfo.InvariantCulture,
+            System.Globalization.DateTimeStyles.AdjustToUniversal);
+        var clock = new FixedCompanyClock(instant, TimeZoneInfo.FindSystemTimeZoneById("Pacific/Auckland"));
+        _sut = new AvailabilityGapDetector(_repo, NullLogger<AvailabilityGapDetector>.Instance, clock);
+        StubClients(new PlannableClientInfo(Guid.NewGuid(), "Max", "Müller"));
+
+        var events = await _sut.DetectAsync();
+
+        Assert.That(events, Has.Count.EqualTo(1));
+        var evt = (AvailabilityGapTriggerEvent)events[0];
+        Assert.That(evt.PeriodStart, Is.EqualTo(new DateOnly(2026, 7, 1)));
+        Assert.That(evt.DaysUntilPeriodStart, Is.EqualTo(3),
+            "Company day (Pacific/Auckland) is already 28.06 at this UTC instant; the detector must not fall back to the UTC day 27.06.");
     }
 
     [Test]

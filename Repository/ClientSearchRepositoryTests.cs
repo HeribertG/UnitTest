@@ -23,6 +23,7 @@ using Klacks.Api.Domain.Models.Staffs;
 using Klacks.Api.Domain.Services.Common;
 using Klacks.Api.Infrastructure.Persistence;
 using Klacks.Api.Infrastructure.Repositories.Staffs;
+using Klacks.UnitTest.TestHelpers;
 using Microsoft.AspNetCore.Http;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
@@ -62,7 +63,8 @@ public class ClientSearchRepositoryTests
         _fuzzySearchService.SearchAsync(Arg.Any<string>(), Arg.Any<int>(), Arg.Any<CancellationToken>())
             .Returns(new List<Client>());
 
-        _repository = new ClientSearchRepository(_dbContext, _groupFilterService, _fuzzySearchService);
+        _repository = new ClientSearchRepository(
+            _dbContext, _groupFilterService, _fuzzySearchService, new FixedCompanyClock(DateTimeOffset.UtcNow));
     }
 
     private static void PassThrough(IClientGroupFilterService filterService)
@@ -93,7 +95,8 @@ public class ClientSearchRepositoryTests
             userService,
             Substitute.For<ILogger<ClientGroupFilterService>>());
 
-        return new ClientSearchRepository(_dbContext, realGroupFilter, _fuzzySearchService);
+        return new ClientSearchRepository(
+            _dbContext, realGroupFilter, _fuzzySearchService, new FixedCompanyClock(DateTimeOffset.UtcNow));
     }
 
     private Guid AddClientInGroup(string firstName, string lastName, int idNumber, Guid groupId)

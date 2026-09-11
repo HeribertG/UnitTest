@@ -1,10 +1,11 @@
 // Copyright (c) Heribert Gasparoli Private. All rights reserved.
 
 /// <summary>
-/// Unit tests for ScheduleRecurringTaskSkill time-zone resolution: with no explicit timeZoneId the
-/// schedule uses the app owner's address country (globalCalendarCountry → IANA zone); an explicit
-/// timeZoneId overrides it; the user context and a hard default act as fallbacks. Also covers the pure
-/// CountryTimeZones map and the guard that refuses to freeze an empty permission set for a skill action.
+/// Unit tests for ScheduleRecurringTaskSkill time-zone resolution: an explicit timeZoneId wins, then the
+/// user's context timezone, then the company's configured time zone (ICompanyClock) - never a
+/// hard-coded regional default, and no longer the app owner's separate GlobalCalendarCountry setting,
+/// which was a third, divergent "company zone" source. Also covers the pure CountryTimeZones map and the
+/// guard that refuses to freeze an empty permission set for a skill action.
 /// The second block covers the way OUT of a pause: the skill is the only surface that can set the
 /// per-task irreversible opt-in at all, and re-applying an existing task by name has to lift the pause -
 /// otherwise the note telling the owner to fix the cause points at a state nothing can leave.
@@ -14,9 +15,9 @@ using Klacks.Api.Application.Constants;
 using Klacks.Api.Application.Skills;
 using Klacks.Api.Domain.Constants;
 using Klacks.Api.Domain.Interfaces.Assistant;
-using Klacks.Api.Domain.Interfaces.Settings;
 using Klacks.Api.Domain.Models.Assistant;
-using SettingsModel = Klacks.Api.Domain.Models.Settings.Settings;
+using Klacks.Api.Domain.Services.Assistant.Skills;
+using Klacks.UnitTest.TestHelpers;
 
 namespace Klacks.UnitTest.Skills;
 
@@ -26,7 +27,7 @@ public class ScheduleRecurringTaskSkillTests
     private IScheduledTaskRepository _repository = null!;
     private ISkillRegistry _skillRegistry = null!;
     private ISkillRiskClassifier _riskClassifier = null!;
-    private ISettingsReader _settingsReader = null!;
+    private FixedCompanyClock _companyClock = null!;
     private ScheduleRecurringTaskSkill _skill = null!;
 
     [SetUp]
@@ -35,13 +36,12 @@ public class ScheduleRecurringTaskSkillTests
         _repository = Substitute.For<IScheduledTaskRepository>();
         _skillRegistry = Substitute.For<ISkillRegistry>();
         _riskClassifier = Substitute.For<ISkillRiskClassifier>();
-        _settingsReader = Substitute.For<ISettingsReader>();
-        _skill = new ScheduleRecurringTaskSkill(_repository, _skillRegistry, _riskClassifier, _settingsReader);
+        _companyClock = new FixedCompanyClock(DateTimeOffset.UtcNow, TimeZoneInfo.Utc);
+        _skill = new ScheduleRecurringTaskSkill(
+            _repository, _skillRegistry, _riskClassifier, new EffectiveTimeZoneResolver(_companyClock));
     }
 
-    private void OwnerCountry(string? code) =>
-        _settingsReader.GetSetting(SettingKeys.GlobalCalendarCountry)
-            .Returns(code is null ? (SettingsModel?)null : new SettingsModel { Type = SettingKeys.GlobalCalendarCountry, Value = code });
+    private void CompanyZone(string ianaId) => _companyClock.TimeZone = TimeZoneInfo.FindSystemTimeZoneById(ianaId);
 
     private static SkillExecutionContext Ctx(string? userTimezone = null, IReadOnlyList<string>? permissions = null) => new()
     {
@@ -88,9 +88,9 @@ public class ScheduleRecurringTaskSkillTests
     }
 
     [Test]
-    public async Task NoTimeZone_UsesOwnerCountry_Switzerland_ZurichZone()
+    public async Task NoTimeZone_NoUserTimezone_UsesTheCompanyZone_Switzerland_ZurichZone()
     {
-        OwnerCountry("CH");
+        CompanyZone("Europe/Zurich");
 
         var result = await _skill.ExecuteAsync(Ctx(), ReminderParams());
 
@@ -100,21 +100,21 @@ public class ScheduleRecurringTaskSkillTests
     }
 
     [Test]
-    public async Task NoTimeZone_UsesOwnerCountry_Germany_BerlinZone()
+    public async Task NoTimeZone_NoUserTimezone_UsesTheCompanyZone_India_KolkataZone()
     {
-        OwnerCountry("DE");
+        CompanyZone("Asia/Kolkata");
 
         var result = await _skill.ExecuteAsync(Ctx(), ReminderParams());
 
         result.Success.ShouldBeTrue();
         await _repository.Received(1).AddAsync(
-            Arg.Is<ScheduledTask>(t => t.TimeZoneId == "Europe/Berlin"), Arg.Any<CancellationToken>());
+            Arg.Is<ScheduledTask>(t => t.TimeZoneId == "Asia/Kolkata"), Arg.Any<CancellationToken>());
     }
 
     [Test]
-    public async Task ExplicitTimeZone_OverridesOwnerCountry()
+    public async Task ExplicitTimeZone_OverridesTheCompanyZone()
     {
-        OwnerCountry("CH");
+        CompanyZone("Europe/Zurich");
 
         var result = await _skill.ExecuteAsync(Ctx(), ReminderParams("America/New_York"));
 
@@ -124,9 +124,19 @@ public class ScheduleRecurringTaskSkillTests
     }
 
     [Test]
-    public async Task NoOwnerCountry_FallsBackToUserTimezone()
+    public async Task ExplicitTimeZone_OverridesTheUserTimezoneToo()
     {
-        OwnerCountry(null);
+        var result = await _skill.ExecuteAsync(Ctx("Europe/Vienna"), ReminderParams("America/New_York"));
+
+        result.Success.ShouldBeTrue();
+        await _repository.Received(1).AddAsync(
+            Arg.Is<ScheduledTask>(t => t.TimeZoneId == "America/New_York"), Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task NoExplicitTimeZone_UserTimezoneOverridesTheCompanyZone()
+    {
+        CompanyZone("Europe/Zurich");
 
         var result = await _skill.ExecuteAsync(Ctx("Europe/Vienna"), ReminderParams());
 
@@ -136,15 +146,27 @@ public class ScheduleRecurringTaskSkillTests
     }
 
     [Test]
-    public async Task UnknownOwnerCountry_NoUserTimezone_FallsBackToDefault()
+    public async Task ExplicitWindowsTimeZone_IsNormalizedToIana_BeforePersisting()
     {
-        OwnerCountry("US");
+        CompanyZone("Europe/Zurich");
 
-        var result = await _skill.ExecuteAsync(Ctx(), ReminderParams());
+        var result = await _skill.ExecuteAsync(Ctx(), ReminderParams("W. Europe Standard Time"));
 
         result.Success.ShouldBeTrue();
         await _repository.Received(1).AddAsync(
-            Arg.Is<ScheduledTask>(t => t.TimeZoneId == TimeZoneDefaults.DefaultTimezone), Arg.Any<CancellationToken>());
+            Arg.Is<ScheduledTask>(t => t.TimeZoneId == "Europe/Berlin"), Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task NoExplicitTimeZone_InvalidUserTimezone_FallsThroughToTheCompanyZone()
+    {
+        CompanyZone("Europe/Zurich");
+
+        var result = await _skill.ExecuteAsync(Ctx("Not/AZone"), ReminderParams());
+
+        result.Success.ShouldBeTrue();
+        await _repository.Received(1).AddAsync(
+            Arg.Is<ScheduledTask>(t => t.TimeZoneId == "Europe/Zurich"), Arg.Any<CancellationToken>());
     }
 
     [TestCase("CH", "Europe/Zurich")]
@@ -168,7 +190,6 @@ public class ScheduleRecurringTaskSkillTests
     [Test]
     public async Task SkillAction_WithoutPermissions_IsRefusedAndNothingIsPersisted()
     {
-        OwnerCountry("CH");
         KnownHarmlessSkill("list_clients");
 
         var result = await _skill.ExecuteAsync(Ctx(), SkillParams());
@@ -181,7 +202,6 @@ public class ScheduleRecurringTaskSkillTests
     [Test]
     public async Task SkillAction_WithPermissions_FreezesThem()
     {
-        OwnerCountry("CH");
         KnownHarmlessSkill("list_clients");
 
         var result = await _skill.ExecuteAsync(
@@ -196,8 +216,6 @@ public class ScheduleRecurringTaskSkillTests
     [Test]
     public async Task Reminder_WithoutPermissions_IsStillAllowed()
     {
-        OwnerCountry("CH");
-
         var result = await _skill.ExecuteAsync(Ctx(), ReminderParams());
 
         result.Success.ShouldBeTrue();
@@ -232,7 +250,6 @@ public class ScheduleRecurringTaskSkillTests
     [Test]
     public async Task ReApplyingAPausedTask_LiftsThePauseAndDropsItsReason()
     {
-        OwnerCountry("CH");
         var context = Ctx();
         var existing = ExistingTask(context.UserId, "weekly check", "irreversible skill without the opt-in");
 
@@ -247,7 +264,6 @@ public class ScheduleRecurringTaskSkillTests
     [Test]
     public async Task ReApplyingAPausedTask_TellsTheUserItIsRunningAgain()
     {
-        OwnerCountry("CH");
         var context = Ctx();
         ExistingTask(context.UserId, "weekly check", "irreversible skill without the opt-in");
 
@@ -259,7 +275,6 @@ public class ScheduleRecurringTaskSkillTests
     [Test]
     public async Task ReApplyingATaskThatWasNotPaused_SaysNothingAboutAPause()
     {
-        OwnerCountry("CH");
         var context = Ctx();
         var existing = ExistingTask(context.UserId, "weekly check");
 
@@ -273,8 +288,6 @@ public class ScheduleRecurringTaskSkillTests
     [Test]
     public async Task IrreversibleOptIn_DefaultsToOff_OnANewTask()
     {
-        OwnerCountry("CH");
-
         var result = await _skill.ExecuteAsync(Ctx(), ReminderParams());
 
         result.Success.ShouldBeTrue();
@@ -285,7 +298,6 @@ public class ScheduleRecurringTaskSkillTests
     [Test]
     public async Task IrreversibleOptIn_IsPersisted_OnANewTask()
     {
-        OwnerCountry("CH");
         var parameters = ReminderParams();
         parameters["allowIrreversibleUnattended"] = true;
 
@@ -299,7 +311,6 @@ public class ScheduleRecurringTaskSkillTests
     [Test]
     public async Task IrreversibleOptIn_IsPersisted_WhenAnExistingTaskIsReApplied()
     {
-        OwnerCountry("CH");
         var context = Ctx();
         var existing = ExistingTask(context.UserId, "weekly check", "irreversible skill without the opt-in");
         var parameters = ReminderParams();
@@ -315,7 +326,6 @@ public class ScheduleRecurringTaskSkillTests
     [Test]
     public async Task IrreversibleOptIn_SurvivesAReApplyThatOmitsIt_SoTheResumeAdviceDoesNotLoop()
     {
-        OwnerCountry("CH");
         var context = Ctx();
         var existing = ExistingTask(context.UserId, "weekly check", "autonomy level too low");
         existing.AllowIrreversibleUnattended = true;
@@ -330,7 +340,6 @@ public class ScheduleRecurringTaskSkillTests
     [Test]
     public async Task IrreversibleOptIn_CanStillBeSwitchedOffExplicitly()
     {
-        OwnerCountry("CH");
         var context = Ctx();
         var existing = ExistingTask(context.UserId, "weekly check");
         existing.AllowIrreversibleUnattended = true;
@@ -346,7 +355,6 @@ public class ScheduleRecurringTaskSkillTests
     [Test]
     public async Task Preview_OfAnExistingTask_ShowsTheOptInItActuallyCarries()
     {
-        OwnerCountry("CH");
         var context = Ctx();
         var existing = ExistingTask(context.UserId, "weekly check");
         existing.AllowIrreversibleUnattended = true;
@@ -364,7 +372,6 @@ public class ScheduleRecurringTaskSkillTests
     [Test]
     public async Task IrreversibleOptIn_AppearsInThePreviewBeforeAnythingIsSaved()
     {
-        OwnerCountry("CH");
         var parameters = ReminderParams();
         parameters["allowIrreversibleUnattended"] = true;
         parameters["apply"] = false;

@@ -90,6 +90,46 @@ public class CreateAddressSkillTests
     }
 
     [Test]
+    public async Task CreateAddress_ValidFrom_PersistsKindUtc_SoNpgsqlAcceptsTheTimestamptzWrite()
+    {
+        var mediator = MediatorWithEchoingPostAndReRead();
+        var skill = new CreateAddressSkill(mediator);
+
+        var result = await skill.ExecuteAsync(Ctx(), new Dictionary<string, object>
+        {
+            ["clientId"] = Guid.NewGuid().ToString(),
+            ["city"] = "Bern",
+            ["validFrom"] = "2026-08-01"
+        });
+
+        result.Success.ShouldBeTrue();
+        await mediator.Received(1).Send(
+            Arg.Is<PostCommand<AddressResource>>(c => c.Resource.ValidFrom!.Value.Kind == DateTimeKind.Utc),
+            Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task CreateAddress_ValidFromWithOffset_KeepsTheWrittenCalendarDay()
+    {
+        var mediator = MediatorWithEchoingPostAndReRead();
+        var skill = new CreateAddressSkill(mediator);
+
+        var result = await skill.ExecuteAsync(Ctx(), new Dictionary<string, object>
+        {
+            ["clientId"] = Guid.NewGuid().ToString(),
+            ["city"] = "Bern",
+            ["validFrom"] = "2026-08-01T00:00:00+02:00"
+        });
+
+        result.Success.ShouldBeTrue();
+        await mediator.Received(1).Send(
+            Arg.Is<PostCommand<AddressResource>>(c =>
+                c.Resource.ValidFrom == new DateTime(2026, 8, 1, 0, 0, 0, DateTimeKind.Utc) &&
+                c.Resource.ValidFrom!.Value.Kind == DateTimeKind.Utc),
+            Arg.Any<CancellationToken>());
+    }
+
+    [Test]
     public async Task CreateAddress_InvalidValidFrom_ReturnsError_NoPost()
     {
         var mediator = Substitute.For<IMediator>();

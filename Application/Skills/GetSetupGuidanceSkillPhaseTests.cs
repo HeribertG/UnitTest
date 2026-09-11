@@ -15,6 +15,7 @@ using Klacks.Api.Domain.Interfaces.Imports;
 using Klacks.Api.Domain.Interfaces.Settings;
 using Klacks.Api.Domain.Models.Assistant;
 using Klacks.Api.Infrastructure.Mediator;
+using Klacks.UnitTest.TestHelpers;
 
 namespace Klacks.UnitTest.Application.Skills;
 
@@ -113,11 +114,12 @@ public class GetSetupGuidanceSkillPhaseTests
         var activityProbe = Substitute.For<IScheduleActivityProbe>();
         var objectStorageService = Substitute.For<IObjectStorageService>();
         var settingsReader = Substitute.For<ISettingsReader>();
+        var companyClock = new FixedCompanyClock(DateTimeOffset.UtcNow, TimeZoneInfo.Utc);
 
         mediator.Send(Arg.Any<GetDefaultQuery>(), Arg.Any<CancellationToken>())
             .Returns((Klacks.Api.Application.DTOs.ErpDropPoints.ErpDropPointResource)null!);
         activityProbe.GetSetupStateAsync(Arg.Any<CancellationToken>()).Returns(state);
 
-        return new GetSetupGuidanceSkill(mediator, activityProbe, objectStorageService, settingsReader);
+        return new GetSetupGuidanceSkill(mediator, activityProbe, objectStorageService, settingsReader, companyClock);
     }
 }

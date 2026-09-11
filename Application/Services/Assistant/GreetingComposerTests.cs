@@ -12,6 +12,7 @@ using Klacks.Api.Domain.Interfaces.Assistant;
 using Klacks.Api.Domain.Interfaces.Settings;
 using Klacks.Api.Domain.Models.Assistant;
 using Klacks.Api.Domain.Services.Assistant.Providers;
+using Klacks.UnitTest.TestHelpers;
 using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Logging.Abstractions;
 using Shouldly;
@@ -21,6 +22,8 @@ namespace Klacks.UnitTest.Application.Services.Assistant;
 [TestFixture]
 public class GreetingComposerTests
 {
+    private static readonly DateOnly FixedToday = new(2026, 9, 11);
+
     private ILLMProviderFactory _providerFactory = null!;
     private ILLMRepository _llmRepository = null!;
     private IOpenMeteoClient _weatherClient = null!;
@@ -30,6 +33,7 @@ public class GreetingComposerTests
     private IAgentRepository _agentRepository = null!;
     private ICompanyLocationProvider _companyLocation = null!;
     private ISettingsReader _settingsReader = null!;
+    private FixedCompanyClock _companyClock = null!;
     private ILLMProvider _provider = null!;
     private GreetingComposer _sut = null!;
 
@@ -45,13 +49,14 @@ public class GreetingComposerTests
         _agentRepository = Substitute.For<IAgentRepository>();
         _companyLocation = Substitute.For<ICompanyLocationProvider>();
         _settingsReader = Substitute.For<ISettingsReader>();
+        _companyClock = new FixedCompanyClock(FixedToday.ToDateTime(TimeOnly.MinValue, DateTimeKind.Utc));
 
         _agentRepository.GetDefaultAgentAsync(Arg.Any<CancellationToken>()).Returns(new Agent { Id = Guid.NewGuid() });
         _identityProvider.GetIdentityPromptAsync(Arg.Any<Guid>(), Arg.Any<string?>(), Arg.Any<bool>(), Arg.Any<CancellationToken>())
             .Returns("You are Klacksy.");
         _searchFactory.CreateAsync(Arg.Any<CancellationToken>()).Returns((IWebSearchProvider?)null);
         _settingsReader.GetSetting(Arg.Any<string>()).Returns((Klacks.Api.Domain.Models.Settings.Settings?)null);
-        _holidayProvider.GetUpcomingHolidayAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
+        _holidayProvider.GetUpcomingHolidayAsync(Arg.Any<string>(), Arg.Any<DateOnly>(), Arg.Any<CancellationToken>())
             .Returns((UpcomingHoliday?)null);
 
         var model = new LLMModel { ModelId = "m", ApiModelId = "m" };
@@ -61,7 +66,7 @@ public class GreetingComposerTests
 
         _sut = new GreetingComposer(
             _providerFactory, _llmRepository, _weatherClient, _holidayProvider, _searchFactory,
-            _identityProvider, _agentRepository, _companyLocation, _settingsReader,
+            _identityProvider, _agentRepository, _companyLocation, _settingsReader, _companyClock,
             new MemoryCache(new MemoryCacheOptions()), NullLogger<GreetingComposer>.Instance);
     }
 

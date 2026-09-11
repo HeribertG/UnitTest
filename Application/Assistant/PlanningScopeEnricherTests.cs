@@ -11,12 +11,15 @@ using Klacks.Api.Application.Services.Assistant;
 using Klacks.Api.Domain.Interfaces.Assistant;
 using Klacks.Api.Domain.Models.Assistant;
 using Klacks.Api.Domain.Models.Scheduling;
+using Klacks.UnitTest.TestHelpers;
 
 namespace Klacks.UnitTest.Application.Assistant;
 
 [TestFixture]
 public class PlanningScopeEnricherTests
 {
+    private static readonly DateTimeOffset CompanyNow = new(2026, 7, 10, 9, 0, 0, TimeSpan.Zero);
+
     private IRuleContextProvider _ruleContext = null!;
     private ISchedulingPolicyResolver _resolver = null!;
     private PlanningScopeEnricher _sut = null!;
@@ -30,7 +33,7 @@ public class PlanningScopeEnricherTests
         _ruleContext = Substitute.For<IRuleContextProvider>();
         _resolver = Substitute.For<ISchedulingPolicyResolver>();
         _resolver.GetForClientAsync(Arg.Any<Guid>(), Arg.Any<DateOnly>()).Returns(Policy);
-        _sut = new PlanningScopeEnricher(_ruleContext, _resolver);
+        _sut = new PlanningScopeEnricher(_ruleContext, _resolver, new FixedCompanyClock(CompanyNow));
     }
 
     private static LLMContext Ctx(bool schedulingSkill, string? clientId, string? periodFrom = null)
@@ -97,7 +100,7 @@ public class PlanningScopeEnricherTests
         _ruleContext.IsSchedulingContext(Arg.Any<IReadOnlyList<string>>()).Returns(true);
         var clientId = Guid.NewGuid();
         var ctx = Ctx(schedulingSkill: true, clientId.ToString(), periodFrom: "garbage");
-        var today = DateOnly.FromDateTime(DateTime.UtcNow);
+        var today = DateOnly.FromDateTime(CompanyNow.UtcDateTime);
 
         await _sut.EnrichAsync(ctx);
 

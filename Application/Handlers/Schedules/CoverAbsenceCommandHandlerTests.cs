@@ -23,6 +23,7 @@ using Klacks.Api.Domain.Enums;
 using Klacks.Api.Domain.Interfaces;
 using Klacks.Api.Domain.Interfaces.Assistant;
 using Klacks.Api.Domain.Interfaces.Schedules;
+using Klacks.Api.Domain.Interfaces.Settings;
 using Klacks.Api.Domain.Models.Schedules;
 using Klacks.Api.Infrastructure.Mediator;
 using Klacks.ScheduleRecovery.Engine;
@@ -58,6 +59,7 @@ public class CoverAbsenceCommandHandlerTests
     private IMediator _mediator = null!;
     private IUnitOfWork _unitOfWork = null!;
     private IEscalationChainService _escalationChainService = null!;
+    private ICompanyClock _companyClock = null!;
     private CoverAbsenceCommandHandler _handler = null!;
 
     [SetUp]
@@ -102,6 +104,7 @@ public class CoverAbsenceCommandHandlerTests
 
         _overrideAuthorizer = Substitute.For<ISupervisorOverrideAuthorizer>();
         _httpContextAccessor = Substitute.For<IHttpContextAccessor>();
+        _companyClock = new FixedCompanyClock(DateTimeOffset.UtcNow, TimeZoneInfo.Utc);
 
         var partitionService = new CompliancePartitionService(
             _conflictChecker,
@@ -111,7 +114,7 @@ public class CoverAbsenceCommandHandlerTests
 
         _handler = new CoverAbsenceCommandHandler(
             _scenarioRepo, _scenarioService, _scheduleEntries, _snapshotBuilder, new LocalRepairEngine(),
-            partitionService, _mediator, _unitOfWork, _escalationChainService,
+            partitionService, _mediator, _unitOfWork, _escalationChainService, _companyClock,
             NullLogger<CoverAbsenceCommandHandler>.Instance);
     }
 
@@ -388,6 +391,28 @@ public class CoverAbsenceCommandHandlerTests
         outcome.ShouldNotBeNull();
         await _mediator.Received().Send(
             Arg.Is<BulkAddBreaksCommand>(c => c.Request.Breaks.Count == 3),
+            Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task CoveredSlot_ShiftStartUtc_IsConvertedFromCompanyWallClock_NotRawUtc()
+    {
+        // Date is 2026-03-10 (before the EU spring-forward on 2026-03-29), so Zurich is CET (UTC+1):
+        // the 08:00 local shift start must arrive at the escalation chain as 07:00 UTC, not 08:00 UTC.
+        var zurichClock = new FixedCompanyClock(DateTimeOffset.UtcNow, TimeZoneInfo.FindSystemTimeZoneById("Europe/Zurich"));
+        var partitionService = new CompliancePartitionService(
+            _conflictChecker, _overrideAuthorizer, _httpContextAccessor,
+            Substitute.For<ILogger<CompliancePartitionService>>());
+        var handler = new CoverAbsenceCommandHandler(
+            _scenarioRepo, _scenarioService, _scheduleEntries, _snapshotBuilder, new LocalRepairEngine(),
+            partitionService, _mediator, _unitOfWork, _escalationChainService, zurichClock,
+            NullLogger<CoverAbsenceCommandHandler>.Instance);
+
+        await handler.Handle(new CoverAbsenceCommand(ClientId, Date, GroupId, AbsenceId), CancellationToken.None);
+
+        await _escalationChainService.Received(1).StartChainAsync(
+            Arg.Is<StartEscalationChainRequest>(r =>
+                r.ShiftStartUtc == new DateTime(2026, 3, 10, 7, 0, 0, DateTimeKind.Utc)),
             Arg.Any<CancellationToken>());
     }
 

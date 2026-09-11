@@ -15,6 +15,7 @@ using Klacks.Api.Domain.Interfaces.Imports;
 using Klacks.Api.Domain.Interfaces.Settings;
 using Klacks.Api.Domain.Models.Assistant;
 using Klacks.Api.Infrastructure.Mediator;
+using Klacks.UnitTest.TestHelpers;
 using SettingsModel = Klacks.Api.Domain.Models.Settings.Settings;
 
 namespace Klacks.UnitTest.Skills;
@@ -56,7 +57,8 @@ public class GetErpDropPointSettingsSkillTests
         var objectStorageService = Substitute.For<IObjectStorageService>();
         objectStorageService.ResolvePath("erp/orders/").Returns(ResolvedPath);
         var settingsReader = Substitute.For<ISettingsReader>();
-        var skill = new GetErpDropPointSettingsSkill(mediator, objectStorageService, settingsReader);
+        var companyClock = new FixedCompanyClock(DateTimeOffset.UtcNow, TimeZoneInfo.Utc);
+        var skill = new GetErpDropPointSettingsSkill(mediator, objectStorageService, settingsReader, companyClock);
 
         var result = await skill.ExecuteAsync(Ctx(), new Dictionary<string, object>());
 
@@ -74,7 +76,8 @@ public class GetErpDropPointSettingsSkillTests
         var objectStorageService = Substitute.For<IObjectStorageService>();
         objectStorageService.ResolvePath(Arg.Any<string>()).Returns(ResolvedPath);
         var settingsReader = Substitute.For<ISettingsReader>();
-        var skill = new GetErpDropPointSettingsSkill(mediator, objectStorageService, settingsReader);
+        var companyClock = new FixedCompanyClock(DateTimeOffset.UtcNow, TimeZoneInfo.Utc);
+        var skill = new GetErpDropPointSettingsSkill(mediator, objectStorageService, settingsReader, companyClock);
 
         var result = await skill.ExecuteAsync(Ctx(), new Dictionary<string, object>());
 
@@ -97,7 +100,8 @@ public class GetErpDropPointSettingsSkillTests
             .Returns(new SettingsModel { Type = ErpImportSettingsTypes.CronExpression, Value = "*/15 * * * *" });
         settingsReader.GetSetting(ErpImportSettingsTypes.CronTimeZoneId)
             .Returns(new SettingsModel { Type = ErpImportSettingsTypes.CronTimeZoneId, Value = "Europe/Zurich" });
-        var skill = new GetErpDropPointSettingsSkill(mediator, objectStorageService, settingsReader);
+        var companyClock = new FixedCompanyClock(DateTimeOffset.UtcNow, TimeZoneInfo.Utc);
+        var skill = new GetErpDropPointSettingsSkill(mediator, objectStorageService, settingsReader, companyClock);
 
         var result = await skill.ExecuteAsync(Ctx(), new Dictionary<string, object>());
 
@@ -107,7 +111,7 @@ public class GetErpDropPointSettingsSkillTests
     }
 
     [Test]
-    public async Task ExecuteAsync_MissingCronSettings_FallsBackToDefaults()
+    public async Task ExecuteAsync_MissingCronSettings_FallsBackToDefaultCronAndCompanyZone()
     {
         var mediator = Substitute.For<IMediator>();
         mediator.Send(Arg.Any<GetDefaultQuery>(), Arg.Any<CancellationToken>())
@@ -115,12 +119,13 @@ public class GetErpDropPointSettingsSkillTests
         var objectStorageService = Substitute.For<IObjectStorageService>();
         objectStorageService.ResolvePath(Arg.Any<string>()).Returns(ResolvedPath);
         var settingsReader = Substitute.For<ISettingsReader>();
-        var skill = new GetErpDropPointSettingsSkill(mediator, objectStorageService, settingsReader);
+        var companyClock = new FixedCompanyClock(DateTimeOffset.UtcNow, TimeZoneInfo.FindSystemTimeZoneById("Asia/Tokyo"));
+        var skill = new GetErpDropPointSettingsSkill(mediator, objectStorageService, settingsReader, companyClock);
 
         var result = await skill.ExecuteAsync(Ctx(), new Dictionary<string, object>());
 
         GetProperty(result.Data, "CronExpression").ShouldBe(ErpImportSettingsTypes.DefaultCronExpression);
-        GetProperty(result.Data, "TimeZone").ShouldBe(ErpImportSettingsTypes.DefaultTimeZoneId);
+        GetProperty(result.Data, "TimeZone").ShouldBe("Asia/Tokyo");
     }
 
     [Test]
@@ -132,7 +137,8 @@ public class GetErpDropPointSettingsSkillTests
         var objectStorageService = Substitute.For<IObjectStorageService>();
         objectStorageService.ResolvePath(Arg.Any<string>()).Returns(ResolvedPath);
         var settingsReader = Substitute.For<ISettingsReader>();
-        var skill = new GetErpDropPointSettingsSkill(mediator, objectStorageService, settingsReader);
+        var companyClock = new FixedCompanyClock(DateTimeOffset.UtcNow, TimeZoneInfo.Utc);
+        var skill = new GetErpDropPointSettingsSkill(mediator, objectStorageService, settingsReader, companyClock);
 
         await skill.ExecuteAsync(Ctx(), new Dictionary<string, object>());
 

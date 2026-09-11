@@ -19,6 +19,7 @@ using Klacks.Api.Domain.Interfaces.Imports;
 using Klacks.Api.Domain.Interfaces.Settings;
 using Klacks.Api.Domain.Models.Assistant;
 using Klacks.Api.Infrastructure.Mediator;
+using Klacks.UnitTest.TestHelpers;
 
 namespace Klacks.UnitTest.Skills;
 
@@ -31,6 +32,7 @@ public class GetSetupGuidanceSkillTests
     private IScheduleActivityProbe _activityProbe = null!;
     private IObjectStorageService _objectStorageService = null!;
     private ISettingsReader _settingsReader = null!;
+    private FixedCompanyClock _companyClock = null!;
     private GetSetupGuidanceSkill _sut = null!;
 
     private static SkillExecutionContext Ctx() => new()
@@ -48,12 +50,13 @@ public class GetSetupGuidanceSkillTests
         _activityProbe = Substitute.For<IScheduleActivityProbe>();
         _objectStorageService = Substitute.For<IObjectStorageService>();
         _settingsReader = Substitute.For<ISettingsReader>();
+        _companyClock = new FixedCompanyClock(DateTimeOffset.UtcNow, TimeZoneInfo.Utc);
 
         _objectStorageService.ResolvePath(Arg.Any<string>()).Returns(ResolvedPath);
         StubDropPoint(null);
         StubState(hasOrders: false, hasShifts: false, hasWork: false);
 
-        _sut = new GetSetupGuidanceSkill(_mediator, _activityProbe, _objectStorageService, _settingsReader);
+        _sut = new GetSetupGuidanceSkill(_mediator, _activityProbe, _objectStorageService, _settingsReader, _companyClock);
     }
 
     private void StubState(bool hasOrders, bool hasShifts, bool hasWork) =>

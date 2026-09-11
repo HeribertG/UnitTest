@@ -13,6 +13,7 @@ using Klacks.Api.Domain.DTOs.Filter;
 using Klacks.Api.Domain.Services.Shifts;
 using Klacks.Api.Infrastructure.Services.Schedules;
 using Klacks.Api.Application.Mappers;
+using Klacks.UnitTest.TestHelpers;
 using Microsoft.AspNetCore.Http;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
@@ -26,7 +27,6 @@ public class ShiftPerformanceIntegrationTests
 {
     private DataBaseContext _context;
     private IShiftRepository _shiftRepository;
-    private IShiftFilterService _shiftFilterService;
     private IDateRangeFilterService _dateRangeFilterService;
     private IShiftSearchService _searchService;
     private IShiftSortingService _sortingService;
@@ -80,14 +80,9 @@ public class ShiftPerformanceIntegrationTests
         var mockShiftValidator = Substitute.For<IShiftValidator>();
         var scheduleMapper = new ScheduleMapper();
         _queryPipeline = new ShiftQueryPipelineService(_dateRangeFilterService, _searchService, _sortingService, _statusFilterService, _paginationService);
-        _shiftRepository = new ShiftRepository(_context, mockLogger, _queryPipeline, _groupManagementService, collectionUpdateService, mockShiftValidator, scheduleMapper);
-        
-        _shiftFilterService = new ShiftFilterService(
-            _dateRangeFilterService,
-            _searchService,
-            _sortingService,
-            _statusFilterService
-        );
+        _shiftRepository = new ShiftRepository(
+            _context, mockLogger, _queryPipeline, _groupManagementService, collectionUpdateService, mockShiftValidator,
+            scheduleMapper, new FixedCompanyClock(DateTimeOffset.UtcNow));
 
         // Create test data
         await CreateTestData();
@@ -295,7 +290,7 @@ public class ShiftPerformanceIntegrationTests
         var baseQuery = _shiftRepository.GetQuery();
 
         // Act - Build up the query without executing it (only test date range and sorting to avoid EF.Functions.Like issues)
-        var query1 = _dateRangeFilterService.ApplyDateRangeFilter(baseQuery, true, false, false);
+        var query1 = _dateRangeFilterService.ApplyDateRangeFilter(baseQuery, true, false, false, DateOnly.FromDateTime(DateTime.UtcNow));
         var query2 = _sortingService.ApplySorting(query1, "name", "asc");
 
         // Assert - With InMemoryDatabase, we can't get SQL strings, so test query composition instead

@@ -5,6 +5,7 @@ using Klacks.Api.Domain.Services.Shifts;
 using Klacks.Api.Infrastructure.Persistence;
 using Klacks.Api.Infrastructure.Repositories;
 using Klacks.Api.Application.Mappers;
+using Klacks.UnitTest.TestHelpers;
 using Microsoft.AspNetCore.Http;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
@@ -43,7 +44,8 @@ public class ShiftValidatorTests
             mockShiftGroupManagementService,
             collectionUpdateService,
             mockShiftValidator,
-            scheduleMapper);
+            scheduleMapper,
+            new FixedCompanyClock(DateTimeOffset.UtcNow));
 
         _validator = new ShiftValidator();
     }

@@ -28,11 +28,6 @@ public class TargetHoursDriftDetectorTests
     private IScheduleActivityProbe _activityProbe = null!;
     private TargetHoursDriftDetector _sut = null!;
 
-    private sealed class FixedTimeProvider(DateTimeOffset now) : TimeProvider
-    {
-        public override DateTimeOffset GetUtcNow() => now;
-    }
-
     [SetUp]
     public void Setup()
     {
@@ -44,9 +39,9 @@ public class TargetHoursDriftDetectorTests
         _sut = CreateSut(new DateTimeOffset(2026, 8, 11, 12, 0, 0, TimeSpan.Zero));
     }
 
-    private TargetHoursDriftDetector CreateSut(DateTimeOffset now) =>
+    private TargetHoursDriftDetector CreateSut(DateTimeOffset now, TimeZoneInfo? zone = null) =>
         new(_clientRepository, _workRepository, _activityProbe,
-            NullLogger<TargetHoursDriftDetector>.Instance, new FixedTimeProvider(now));
+            NullLogger<TargetHoursDriftDetector>.Instance, new FixedCompanyClock(now, zone));
 
     private static Client MakeClient(string firstName = "Anna", EntityTypeEnum type = EntityTypeEnum.Employee) => new()
     {
@@ -329,6 +324,38 @@ public class TargetHoursDriftDetectorTests
         var events = await _sut.DetectAsync();
 
         Assert.That(events, Is.Empty);
+    }
+
+    [Test]
+    public async Task DetectAsync_AucklandCompanyDayAcrossUtcMonthBoundary_UsesCompanyDayNotUtcDay()
+    {
+        // UTC instant 2026-05-31T23:30Z is still 31.05 in UTC but already 01.06 11:30 in Pacific/Auckland
+        // (+12:00, no DST in the southern-hemisphere autumn/winter transition). "Last completed month" is
+        // therefore April under the (wrong) UTC day, but May under the (correct) company day.
+        var instant = DateTimeOffset.Parse(
+            "2026-05-31T23:30:00Z", System.Globalization.CultureInfo.InvariantCulture,
+            System.Globalization.DateTimeStyles.AdjustToUniversal);
+        _sut = CreateSut(instant, TimeZoneInfo.FindSystemTimeZoneById("Pacific/Auckland"));
+        var client = MakeClient();
+        SetupClients(client);
+        _workRepository.GetPeriodHoursForClients(
+            Arg.Any<List<Guid>>(), Arg.Any<DateOnly>(), Arg.Any<DateOnly>(), Arg.Any<Guid?>(), Arg.Any<CancellationToken>())
+            .Returns(new Dictionary<Guid, PeriodHoursResource>
+            {
+                [client.Id] = new() { Hours = 0, GuaranteedHours = 170 }
+            });
+
+        var events = await _sut.DetectAsync();
+
+        await _workRepository.Received(1).GetPeriodHoursForClients(
+            Arg.Any<List<Guid>>(),
+            new DateOnly(2026, 5, 1),
+            new DateOnly(2026, 5, 31),
+            Arg.Any<Guid?>(),
+            Arg.Any<CancellationToken>());
+        var drift = events.Single() as TargetHoursDriftTriggerEvent;
+        Assert.That(drift!.PeriodLabel, Is.EqualTo("2026-05"),
+            "Company day (Pacific/Auckland) is already 01.06 at this UTC instant; the detector must not fall back to the UTC day 31.05 and scan April instead of May.");
     }
 
     [Test]

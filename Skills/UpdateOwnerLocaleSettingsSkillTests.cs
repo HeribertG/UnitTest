@@ -111,6 +111,48 @@ public class UpdateOwnerLocaleSettingsSkillTests
     }
 
     [Test]
+    public async Task TimeZone_WindowsId_IsNormalizedToIana_BeforePersisting()
+    {
+        var result = await _skill.ExecuteAsync(Ctx(), new Dictionary<string, object>
+        {
+            ["timeZone"] = "W. Europe Standard Time"
+        });
+
+        result.Success.ShouldBeTrue();
+        await _settingsRepository.Received(1).AddSetting(
+            Arg.Is<SettingsModel>(s => s.Type == SettingsConstants.APP_ADDRESS_TIMEZONE && s.Value == "Europe/Berlin"));
+    }
+
+    [Test]
+    public async Task TimeZone_Invalid_ReturnsError_NothingWritten()
+    {
+        var result = await _skill.ExecuteAsync(Ctx(), new Dictionary<string, object>
+        {
+            ["timeZone"] = "Not/AZone"
+        });
+
+        result.Success.ShouldBeFalse();
+        result.Message.ShouldContain("Invalid time zone");
+        await _settingsRepository.DidNotReceive().AddSetting(Arg.Any<SettingsModel>());
+        await _settingsRepository.DidNotReceive().PutSetting(Arg.Any<SettingsModel>());
+        await _unitOfWork.DidNotReceive().CompleteAsync();
+    }
+
+    [Test]
+    public async Task TimeZone_Invalid_AlongsideValidCountry_WritesNothingAtAll()
+    {
+        var result = await _skill.ExecuteAsync(Ctx(), new Dictionary<string, object>
+        {
+            ["country"] = "CH",
+            ["timeZone"] = "Not/AZone"
+        });
+
+        result.Success.ShouldBeFalse();
+        await _settingsRepository.DidNotReceive().AddSetting(Arg.Any<SettingsModel>());
+        await _unitOfWork.DidNotReceive().CompleteAsync();
+    }
+
+    [Test]
     public async Task CalendarIdOnly_PersistsGlobalCalendarSelectionId()
     {
         var calendarId = Guid.NewGuid().ToString();

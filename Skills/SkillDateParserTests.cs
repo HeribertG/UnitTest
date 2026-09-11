@@ -46,6 +46,26 @@ public class SkillDateParserTests
         Assert.That(value, Is.EqualTo(new DateTime(2026, 5, 1, 0, 0, 0, DateTimeKind.Utc)));
     }
 
+    [Test]
+    public void UtcDateTimeWithOffset_TakesOnlyTheWrittenCalendarDay_NotShiftedByServerTimeZone()
+    {
+        var (value, invalid) = SkillDateParser.ParseOptionalUtcDate("2026-08-01T00:00:00+02:00", Today);
+
+        Assert.That(invalid, Is.False);
+        Assert.That(value, Is.EqualTo(new DateTime(2026, 8, 1, 0, 0, 0, DateTimeKind.Utc)));
+        Assert.That(value!.Value.Kind, Is.EqualTo(DateTimeKind.Utc));
+    }
+
+    [Test]
+    public void UtcDateTimeWithZ_IsReadAsThatCalendarDay()
+    {
+        var (value, invalid) = SkillDateParser.ParseOptionalUtcDate("2026-08-01T00:00:00Z", Today);
+
+        Assert.That(invalid, Is.False);
+        Assert.That(value, Is.EqualTo(new DateTime(2026, 8, 1, 0, 0, 0, DateTimeKind.Utc)));
+        Assert.That(value!.Value.Kind, Is.EqualTo(DateTimeKind.Utc));
+    }
+
     [TestCase("today")]
     [TestCase("heute")]
     [TestCase("Heute")]

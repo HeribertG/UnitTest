@@ -27,6 +27,7 @@ public class LanguagePluginSkillPhraseInstallerTests
     private const string MatchingSkill = "add_employee_to_group";
     private const string UnlistedSkill = "create_group";
     private const string Term = "dodaj pracownika do grupy";
+    private const string UnlistedTerm = "utworz grupe";
 
     private string _pluginDirectory = null!;
     private DataBaseContext _context = null!;
@@ -99,6 +100,26 @@ public class LanguagePluginSkillPhraseInstallerTests
         rows[0].Source.ShouldBe(SkillPhraseSources.LanguagePack);
         rows[0].Phrase.ShouldBe(Term);
         rows[0].SortOrder.ShouldBe(0);
+    }
+
+    // A feature plugin enabled after the pack was installed pulls the synonyms of its own skills only;
+    // every other skill must keep what it has.
+    [Test]
+    public async Task Install_WithSkillFilter_WritesOnlyTheNamedSkills()
+    {
+        File.WriteAllText(
+            Path.Combine(_pluginDirectory, Code, "skill-synonyms.json"),
+            $"{{\"{MatchingSkill}\": [\"{Term}\"], \"{UnlistedSkill}\": [\"{UnlistedTerm}\"]}}");
+
+        await _installer.InstallSkillSynonymsAsync(_scope, Code, [UnlistedSkill]);
+
+        _unlisted.Synonyms!.ShouldContainKey(Code);
+        _matching.Synonyms.ShouldBeNull();
+
+        var rows = await _context.SkillPhrases.AsNoTracking().ToListAsync();
+
+        rows.Count.ShouldBe(1);
+        rows[0].OwnerName.ShouldBe(UnlistedSkill);
     }
 
     [Test]

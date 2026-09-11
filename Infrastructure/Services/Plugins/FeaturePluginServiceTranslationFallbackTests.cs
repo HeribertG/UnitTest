@@ -7,6 +7,7 @@
 namespace Klacks.UnitTest.Infrastructure.Services.Plugins;
 
 using System.Text.Json;
+using Klacks.Api.Application.Interfaces.Settings;
 using Klacks.Api.Application.Services.Assistant;
 using Klacks.Api.Domain.Interfaces;
 using Klacks.Api.Domain.Interfaces.Assistant;
@@ -75,6 +76,7 @@ public class FeaturePluginServiceTranslationFallbackTests
         provider.GetService(typeof(IUnitOfWork)).Returns(Substitute.For<IUnitOfWork>());
         provider.GetService(typeof(SkillSeedLoader)).Returns(seedLoader);
         provider.GetService(typeof(ISkillCatalogRefresher)).Returns(Substitute.For<ISkillCatalogRefresher>());
+        provider.GetService(typeof(ILanguagePluginService)).Returns(Substitute.For<ILanguagePluginService>());
         provider.GetService(typeof(IAgentSkillRepository)).Returns(Substitute.For<IAgentSkillRepository>());
         provider.GetService(typeof(IAgentRepository)).Returns(Substitute.For<IAgentRepository>());
 

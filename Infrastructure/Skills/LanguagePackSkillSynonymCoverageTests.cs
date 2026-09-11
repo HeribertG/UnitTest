@@ -1,12 +1,14 @@
 // Copyright (c) Heribert Gasparoli Private. All rights reserved.
 
 /// <summary>
-/// Guards the per-language skill-synonym contract: every skill in skill-seeds.json that ships
-/// non-empty synonyms must have a matching entry with at least one non-blank phrase in every
-/// Plugins/Languages/&lt;locale&gt;/skill-synonyms.json pack, or that language silently loses the
-/// deterministic keyword-based skill match for that skill without anyone noticing. Locales are
-/// discovered dynamically from the Plugins/Languages directory, so a newly added language pack is
-/// checked automatically. A second guard enforces that CJK/Thai packs contain no phrase shorter than
+/// Guards the per-language skill-synonym contract: every skill in skill-seeds.json or in a feature
+/// plugin's skill-seeds.json that ships non-empty synonyms must have a matching entry with at least
+/// one non-blank phrase in every Plugins/Languages/&lt;locale&gt;/skill-synonyms.json pack, or that
+/// language silently loses the deterministic keyword-based skill match for that skill without anyone
+/// noticing. Locales are discovered dynamically from the Plugins/Languages directory, so a newly added
+/// language pack is checked automatically. Feature-plugin skills are included since 2026-09-11: the
+/// messaging skills had been missing from all 21 packs unnoticed, because only the core seeds were
+/// required. A second guard enforces that CJK/Thai packs contain no phrase shorter than
 /// SkillMatchingEngine's MinMatchLength (4 chars), since such entries can never match and are dead data.
 /// </summary>
 
@@ -30,6 +32,11 @@ public class LanguagePackSkillSynonymCoverageTests
     private static readonly string[] PluginsLanguagesRelativePath =
     [
         "Klacks.Api", "Plugins", "Languages"
+    ];
+
+    private static readonly string[] PluginsFeaturesRelativePath =
+    [
+        "Klacks.Api", "Plugins", "Features"
     ];
 
     private static readonly string[] CjkOrThaiLocales = ["ja", "ko", "th", "zh-CN", "zh-TW"];
@@ -90,23 +97,49 @@ public class LanguagePackSkillSynonymCoverageTests
 
         return $"{locale}/{SkillSynonymsFileName} is missing a non-empty synonym entry for {missing.Count} " +
             $"skill(s): {string.Join(", ", shown)}{suffix}. Every skill with non-empty synonyms in " +
-            $"{SkillSeedsFileName} must have at least one non-blank phrase here, or this language loses the " +
+            $"{SkillSeedsFileName} (core or feature plugin) must have at least one non-blank phrase here, or this language loses the " +
             "deterministic keyword-based skill match for it.";
     }
 
     private static List<string> LoadSkillNamesWithNonEmptySynonyms()
     {
-        using var document = JsonDocument.Parse(File.ReadAllText(LocateDefinitionsFile(SkillSeedsFileName)));
+        var names = new List<string>();
 
-        return document.RootElement.GetProperty("skills").EnumerateArray()
+        using (var document = JsonDocument.Parse(File.ReadAllText(LocateDefinitionsFile(SkillSeedsFileName))))
+        {
+            names.AddRange(SelectNamesWithNonEmptySynonyms(document.RootElement.GetProperty("skills")));
+        }
+
+        var featuresDir = TryLocateDir(PluginsFeaturesRelativePath);
+        if (featuresDir != null)
+        {
+            foreach (var pluginDir in Directory.GetDirectories(featuresDir))
+            {
+                var seedFile = Path.Combine(pluginDir, SkillSeedsFileName);
+                if (!File.Exists(seedFile))
+                {
+                    continue;
+                }
+
+                using var document = JsonDocument.Parse(File.ReadAllText(seedFile));
+                names.AddRange(SelectNamesWithNonEmptySynonyms(document.RootElement));
+            }
+        }
+
+        return names
+            .Distinct(StringComparer.Ordinal)
+            .OrderBy(name => name, StringComparer.Ordinal)
+            .ToList();
+    }
+
+    private static IEnumerable<string> SelectNamesWithNonEmptySynonyms(JsonElement skills) =>
+        skills.EnumerateArray()
             .Where(s => s.TryGetProperty("synonyms", out var synonyms) &&
                         synonyms.ValueKind == JsonValueKind.Object &&
                         synonyms.EnumerateObject().Any())
             .Select(s => s.GetProperty("name").GetString() ?? string.Empty)
             .Where(name => !string.IsNullOrEmpty(name))
-            .OrderBy(name => name, StringComparer.Ordinal)
             .ToList();
-    }
 
     private static Dictionary<string, List<string>> LoadSkillSynonymPack(string locale)
     {

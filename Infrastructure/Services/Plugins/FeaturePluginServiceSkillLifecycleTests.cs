@@ -4,11 +4,14 @@
 /// Tests that a feature plugin's skills follow its lifecycle without a restart. Until 2026-08-06 the
 /// plugin seed loader only ran at startup and only for installed and enabled plugins: a plugin
 /// installed at runtime had no skills until the next boot, and an uninstalled one kept its skills in
-/// the catalogue and in the knowledge index indefinitely.
+/// the catalogue and in the knowledge index indefinitely. Since 2026-09-11 install and enable also pull
+/// the synonyms of every installed language pack into the plugin's skills: a pack installed while the
+/// plugin was off only reached the skills that were enabled at that time.
 /// </summary>
 namespace Klacks.UnitTest.Infrastructure.Services.Plugins;
 
 using System.Text.Json;
+using Klacks.Api.Application.Interfaces.Settings;
 using Klacks.Api.Application.Services.Assistant;
 using Klacks.Api.Domain.Interfaces;
 using Klacks.Api.Domain.Interfaces.Assistant;
@@ -31,10 +34,12 @@ public class FeaturePluginServiceSkillLifecycleTests
     private const string PluginName = "messaging";
     private const string NavigateToSkillName = "navigate_to";
     private const string PluginRoute = "/messaging";
+    private const string PluginSkillName = "send_message";
 
     private ISettingsRepository _settingsRepository = null!;
     private SkillSeedLoader _seedLoader = null!;
     private ISkillCatalogRefresher _refresher = null!;
+    private ILanguagePluginService _languagePluginService = null!;
     private IUnitOfWork _unitOfWork = null!;
     private IAgentSkillRepository _skillRepository = null!;
     private IAgentRepository _agentRepository = null!;
@@ -77,7 +82,10 @@ public class FeaturePluginServiceSkillLifecycleTests
             Substitute.For<Klacks.Api.Application.Interfaces.Plugins.IFeaturePluginService>(),
             Substitute.For<IWebHostEnvironment>(),
             Substitute.For<ILogger<SkillSeedLoader>>());
+        _seedLoader.GetPluginSkillNamesAsync(PluginName, Arg.Any<CancellationToken>())
+            .Returns(new List<string> { PluginSkillName });
         _refresher = Substitute.For<ISkillCatalogRefresher>();
+        _languagePluginService = Substitute.For<ILanguagePluginService>();
 
         _unitOfWork = Substitute.For<IUnitOfWork>();
         _skillRepository = Substitute.For<IAgentSkillRepository>();
@@ -88,6 +96,7 @@ public class FeaturePluginServiceSkillLifecycleTests
         provider.GetService(typeof(IUnitOfWork)).Returns(_unitOfWork);
         provider.GetService(typeof(SkillSeedLoader)).Returns(_seedLoader);
         provider.GetService(typeof(ISkillCatalogRefresher)).Returns(_refresher);
+        provider.GetService(typeof(ILanguagePluginService)).Returns(_languagePluginService);
         provider.GetService(typeof(IAgentSkillRepository)).Returns(_skillRepository);
         provider.GetService(typeof(IAgentRepository)).Returns(_agentRepository);
 
@@ -124,8 +133,52 @@ public class FeaturePluginServiceSkillLifecycleTests
         {
             _seedLoader.SeedPluginSkillsAsync(PluginName, Arg.Any<CancellationToken>());
             _seedLoader.SetPluginSkillsEnabledAsync(PluginName, true, Arg.Any<CancellationToken>());
+            _languagePluginService.ApplyInstalledSkillSynonymsAsync(
+                Arg.Is<IReadOnlyCollection<string>>(names => names.SequenceEqual(new[] { PluginSkillName })));
             _refresher.RefreshAsync(Arg.Any<string>(), Arg.Any<CancellationToken>());
         });
+    }
+
+    // A language pack installed while the plugin was disabled skipped the plugin's skills, because the
+    // pack install only writes into enabled skills. Enabling the plugin has to pull those synonyms.
+    [Test]
+    public async Task EnableAsync_AfterDisable_AppliesTheInstalledLanguagePackSynonymsToThePluginSkills()
+    {
+        await _service.InstallAsync(PluginName);
+        await _service.DisableAsync(PluginName);
+        _languagePluginService.ClearReceivedCalls();
+
+        var enabled = await _service.EnableAsync(PluginName);
+
+        enabled.ShouldBeTrue();
+        await _languagePluginService.Received(1).ApplyInstalledSkillSynonymsAsync(
+            Arg.Is<IReadOnlyCollection<string>>(names => names.SequenceEqual(new[] { PluginSkillName })));
+    }
+
+    [Test]
+    public async Task DisableAsync_DoesNotTouchTheLanguagePackSynonyms()
+    {
+        await _service.InstallAsync(PluginName);
+        _languagePluginService.ClearReceivedCalls();
+
+        await _service.DisableAsync(PluginName);
+
+        await _languagePluginService.DidNotReceive().ApplyInstalledSkillSynonymsAsync(
+            Arg.Any<IReadOnlyCollection<string>>());
+    }
+
+    // Applying the pack synonyms is best effort: if it fails, the catalogue refresh that makes the
+    // plugin's skills reachable must still run.
+    [Test]
+    public async Task InstallAsync_ApplyingSynonymsThrows_StillRefreshesTheCatalogue()
+    {
+        _languagePluginService.ApplyInstalledSkillSynonymsAsync(Arg.Any<IReadOnlyCollection<string>>())
+            .Returns<Task>(_ => throw new InvalidOperationException("pack file unreadable"));
+
+        var installed = await _service.InstallAsync(PluginName);
+
+        installed.ShouldBeTrue();
+        await _refresher.Received(1).RefreshAsync(Arg.Any<string>(), Arg.Any<CancellationToken>());
     }
 
     [Test]

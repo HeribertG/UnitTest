@@ -3,8 +3,8 @@
 /// <summary>
 /// Verifies that the route a skill will call matches the route ASP.NET actually serves. The resolver
 /// exists so the ~200 skills being converted never carry a hand-typed route; a wrong entry here would
-/// turn into a 404 the model has to interpret, so every generic CRUD controller in the assembly is
-/// checked against its own attributes rather than a fixed expectation list.
+/// turn into a 404 the model has to interpret, so every controller in the assembly that declares
+/// ICrudResourceController is checked against its own attributes rather than a fixed expectation list.
 /// </summary>
 
 using System.Reflection;
@@ -34,15 +34,10 @@ public class SelfApiRouteResolverTests
 
     private static Type? ResourceTypeOf(Type type)
     {
-        for (var current = type.BaseType; current is not null; current = current.BaseType)
-        {
-            if (current.IsGenericType && current.GetGenericTypeDefinition() == typeof(InputBaseController<>))
-            {
-                return current.GetGenericArguments()[0];
-            }
-        }
+        var marker = type.GetInterfaces()
+            .FirstOrDefault(i => i.IsGenericType && i.GetGenericTypeDefinition() == typeof(ICrudResourceController<>));
 
-        return null;
+        return marker?.GetGenericArguments()[0];
     }
 
     [TestCaseSource(nameof(GenericCrudControllers))]
@@ -99,7 +94,7 @@ public class SelfApiRouteResolverTests
     {
         var error = Should.Throw<InvalidOperationException>(() => _resolver.Resolve(typeof(string)));
 
-        error.Message.ShouldContain("No generic CRUD controller");
+        error.Message.ShouldContain("ICrudResourceController");
     }
 
     [Test]

@@ -58,13 +58,25 @@ public class McpUserContextReaderTests
     }
 
     [Test]
-    public void PrincipalWithoutRoles_ReturnsNoPermissions()
+    public void PrincipalWithoutRoles_ReturnsThePlannerFloor()
     {
         var principal = McpTestData.Principal(Guid.NewGuid(), Guid.NewGuid(), "carol");
 
         var context = McpUserContextReader.Read(principal);
 
-        Assert.That(context.Permissions, Is.Empty);
+        Assert.That(context.Permissions, Is.EquivalentTo(Permissions.PlannerFloor));
+    }
+
+    [Test]
+    public void PrincipalWithoutRoles_StaysBelowTheSupervisorCeiling()
+    {
+        var principal = McpTestData.Principal(Guid.NewGuid(), Guid.NewGuid(), "carol");
+
+        var context = McpUserContextReader.Read(principal);
+
+        Assert.That(context.Permissions, Does.Not.Contain(Permissions.CanEditSettings));
+        Assert.That(context.Permissions, Does.Not.Contain(Permissions.CanDeleteClients));
+        Assert.That(context.Permissions, Does.Not.Contain(Roles.Authorised));
     }
 
     [Test]

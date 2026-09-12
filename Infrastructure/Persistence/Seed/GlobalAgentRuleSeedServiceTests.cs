@@ -6,6 +6,7 @@
 /// (source != "seed") are never overwritten.
 /// </summary>
 
+using Klacks.Api.Domain.Constants;
 using Klacks.Api.Domain.Interfaces.Assistant;
 using Klacks.Api.Domain.Models.Assistant;
 using Klacks.Api.Infrastructure.Persistence.Seed;
@@ -100,6 +101,28 @@ public class GlobalAgentRuleSeedServiceTests
         await _repository.Received(1).UpsertRuleAsync(
             "PAGE_EXPLANATIONS_VOICE", Arg.Any<string>(), Arg.Any<int>(),
             SeedSource, Arg.Any<string?>(), Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task SeedAsync_UiElementMapRule_CarriesNoHardCodedRouteList()
+    {
+        string? uiElementMapContent = null;
+        _repository.GetActiveRulesAsync(Arg.Any<CancellationToken>())
+            .Returns(new List<GlobalAgentRule>());
+        _repository.UpsertRuleAsync(
+                GlobalAgentRuleNames.UiElementMap,
+                Arg.Do<string>(c => uiElementMapContent = c),
+                Arg.Any<int>(), Arg.Any<string?>(), Arg.Any<string?>(), Arg.Any<CancellationToken>())
+            .Returns(new GlobalAgentRule());
+
+        await CreateService().SeedAsync();
+
+        uiElementMapContent.ShouldNotBeNull();
+        uiElementMapContent!.ShouldNotContain(
+            "/workplace/",
+            Case.Sensitive,
+            "The UI map must not carry a second, hand-maintained route list — it drifts from " +
+            "app-routing.module.ts. The allowed pages are the navigate_to 'page' enum values.");
     }
 
     [Test]

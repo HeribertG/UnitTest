@@ -1,9 +1,23 @@
-﻿using Shouldly;
+// Copyright (c) Heribert Gasparoli Private. All rights reserved.
+
+/// <summary>
+/// The employee absences of the absence Gantt (entity BreakPlaceholder) are the Planer's own write
+/// surface, so Post/Put/Delete must be reachable by a caller without any role.
+///
+/// This fixture used to assert the same thing with GetCustomAttributes(inherit: false) while the
+/// controller derived from InputBaseController. That was a green test over an open hole: MVC reads an
+/// action's attributes with inherit: true, so the base action's [Authorize(Roles = Admin,Authorised)]
+/// was still part of the endpoint metadata and was AND-combined with the scheme-only attribute on the
+/// override. The endpoint stayed closed to roleless callers even though this file said otherwise.
+/// The assertions below therefore use inherit: true and the controller derives from BaseController.
+/// </summary>
+
 using Klacks.Api.Presentation.Controllers.UserBackend;
 using Klacks.Api.Presentation.Controllers.UserBackend.Schedules;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Shouldly;
 using System.Reflection;
 
 namespace Klacks.UnitTest.Controllers;
@@ -11,204 +25,47 @@ namespace Klacks.UnitTest.Controllers;
 [TestFixture]
 public class BreakPlaceholdersControllerAuthorizationTests
 {
-    [Test]
-    public void Post_ShouldHaveAuthorizeAttributeWithJwtOnly()
+    [TestCase("Post")]
+    [TestCase("Put")]
+    [TestCase("Delete")]
+    [TestCase("Get")]
+    [TestCase("GetClientList")]
+    [TestCase("GetScheduleList")]
+    public void EveryEndpoint_IsOpenToAnyAuthenticatedJwtCaller(string methodName)
     {
-        // Arrange
-        var methodInfo = typeof(BreakPlaceholdersController)
-            .GetMethod("Post", BindingFlags.Public | BindingFlags.Instance);
+        var method = typeof(BreakPlaceholdersController)
+            .GetMethod(methodName, BindingFlags.Public | BindingFlags.Instance);
 
-        // Act
-        var authorizeAttributes = methodInfo?.GetCustomAttributes<AuthorizeAttribute>(inherit: false).ToList();
+        method.ShouldNotBeNull($"{methodName} was not found — the test is stale.");
 
-        // Assert
-        authorizeAttributes.ShouldNotBeNull();
-        authorizeAttributes.Count().ShouldBe(1, "Post should have exactly one Authorize attribute");
+        var attributes = method!.GetCustomAttributes<AuthorizeAttribute>(inherit: true).ToList();
 
-        var authorizeAttribute = authorizeAttributes![0];
-        authorizeAttribute.AuthenticationSchemes.ShouldBe(JwtBearerDefaults.AuthenticationScheme,
-            "Post should use JWT authentication");
-        authorizeAttribute.Roles.ShouldBeNullOrEmpty(
-            "Post should not require specific roles - any authenticated JWT user can create breaks");
+        attributes.Count.ShouldBe(1, $"{methodName} should carry exactly one Authorize attribute");
+        attributes[0].AuthenticationSchemes.ShouldBe(
+            JwtBearerDefaults.AuthenticationScheme,
+            $"{methodName} should use JWT authentication");
+        attributes[0].Roles.ShouldBeNullOrEmpty(
+            $"{methodName} must not require a role — a Planer records employee absences.");
+    }
+
+    [TestCase("Post", typeof(HttpPostAttribute))]
+    [TestCase("Put", typeof(HttpPutAttribute))]
+    [TestCase("Delete", typeof(HttpDeleteAttribute))]
+    [TestCase("Get", typeof(HttpGetAttribute))]
+    public void EveryVerb_IsRoutedByItsOwnHttpAttribute(string methodName, Type attributeType)
+    {
+        var method = typeof(BreakPlaceholdersController)
+            .GetMethod(methodName, BindingFlags.Public | BindingFlags.Instance);
+
+        method!.GetCustomAttributes(attributeType, inherit: false).ShouldNotBeEmpty();
     }
 
     [Test]
-    public void Put_ShouldHaveAuthorizeAttributeWithJwtOnly()
+    public void BreakPlaceholdersController_MustNotInheritFromInputBaseController()
     {
-        // Arrange
-        var methodInfo = typeof(BreakPlaceholdersController)
-            .GetMethod("Put", BindingFlags.Public | BindingFlags.Instance);
-
-        // Act
-        var authorizeAttributes = methodInfo?.GetCustomAttributes<AuthorizeAttribute>(inherit: false).ToList();
-
-        // Assert
-        authorizeAttributes.ShouldNotBeNull();
-        authorizeAttributes.Count().ShouldBe(1, "Put should have exactly one Authorize attribute");
-
-        var authorizeAttribute = authorizeAttributes![0];
-        authorizeAttribute.AuthenticationSchemes.ShouldBe(JwtBearerDefaults.AuthenticationScheme,
-            "Put should use JWT authentication");
-        authorizeAttribute.Roles.ShouldBeNullOrEmpty(
-            "Put should not require specific roles - any authenticated JWT user can update breaks");
-    }
-
-    [Test]
-    public void Delete_ShouldHaveAuthorizeAttributeWithJwtOnly()
-    {
-        // Arrange
-        var methodInfo = typeof(BreakPlaceholdersController)
-            .GetMethod("Delete", BindingFlags.Public | BindingFlags.Instance);
-
-        // Act
-        var authorizeAttributes = methodInfo?.GetCustomAttributes<AuthorizeAttribute>(inherit: false).ToList();
-
-        // Assert
-        authorizeAttributes.ShouldNotBeNull();
-        authorizeAttributes.Count().ShouldBe(1, "Delete should have exactly one Authorize attribute");
-
-        var authorizeAttribute = authorizeAttributes![0];
-        authorizeAttribute.AuthenticationSchemes.ShouldBe(JwtBearerDefaults.AuthenticationScheme,
-            "Delete should use JWT authentication");
-        authorizeAttribute.Roles.ShouldBeNullOrEmpty(
-            "Delete should not require specific roles - any authenticated JWT user can delete breaks");
-    }
-
-    [Test]
-    public void Post_ShouldOverrideBaseControllerMethod()
-    {
-        // Arrange
-        var derivedMethod = typeof(BreakPlaceholdersController)
-            .GetMethod("Post", BindingFlags.Public | BindingFlags.Instance);
-
-        var baseMethod = typeof(InputBaseController<>)
-            .MakeGenericType(typeof(Klacks.Api.Application.DTOs.Schedules.BreakPlaceholderResource))
-            .GetMethod("Post", BindingFlags.Public | BindingFlags.Instance);
-
-        // Act & Assert
-        derivedMethod.ShouldNotBeNull();
-        baseMethod.ShouldNotBeNull();
-
-        derivedMethod!.DeclaringType.ShouldBe(typeof(BreakPlaceholdersController),
-            "BreakPlaceholdersController.Post should override InputBaseController.Post");
-
-        derivedMethod.GetBaseDefinition().ShouldBeSameAs(baseMethod,
-            "BreakPlaceholdersController.Post should properly override the base method");
-    }
-
-    [Test]
-    public void Put_ShouldOverrideBaseControllerMethod()
-    {
-        // Arrange
-        var derivedMethod = typeof(BreakPlaceholdersController)
-            .GetMethod("Put", BindingFlags.Public | BindingFlags.Instance);
-
-        var baseMethod = typeof(InputBaseController<>)
-            .MakeGenericType(typeof(Klacks.Api.Application.DTOs.Schedules.BreakPlaceholderResource))
-            .GetMethod("Put", BindingFlags.Public | BindingFlags.Instance);
-
-        // Act & Assert
-        derivedMethod.ShouldNotBeNull();
-        baseMethod.ShouldNotBeNull();
-
-        derivedMethod!.DeclaringType.ShouldBe(typeof(BreakPlaceholdersController),
-            "BreakPlaceholdersController.Put should override InputBaseController.Put");
-
-        derivedMethod.GetBaseDefinition().ShouldBeSameAs(baseMethod,
-            "BreakPlaceholdersController.Put should properly override the base method");
-    }
-
-    [Test]
-    public void Delete_ShouldOverrideBaseControllerMethod()
-    {
-        // Arrange
-        var derivedMethod = typeof(BreakPlaceholdersController)
-            .GetMethod("Delete", BindingFlags.Public | BindingFlags.Instance);
-
-        var baseMethod = typeof(InputBaseController<>)
-            .MakeGenericType(typeof(Klacks.Api.Application.DTOs.Schedules.BreakPlaceholderResource))
-            .GetMethod("Delete", BindingFlags.Public | BindingFlags.Instance);
-
-        // Act & Assert
-        derivedMethod.ShouldNotBeNull();
-        baseMethod.ShouldNotBeNull();
-
-        derivedMethod!.DeclaringType.ShouldBe(typeof(BreakPlaceholdersController),
-            "BreakPlaceholdersController.Delete should override InputBaseController.Delete");
-
-        derivedMethod.GetBaseDefinition().ShouldBeSameAs(baseMethod,
-            "BreakPlaceholdersController.Delete should properly override the base method");
-    }
-
-    [Test]
-    public void Post_ShouldHaveHttpPostAttribute()
-    {
-        // Arrange
-        var methodInfo = typeof(BreakPlaceholdersController)
-            .GetMethod("Post", BindingFlags.Public | BindingFlags.Instance);
-
-        // Act
-        var httpPostAttribute = methodInfo?.GetCustomAttribute<HttpPostAttribute>();
-
-        // Assert
-        httpPostAttribute.ShouldNotBeNull();
-    }
-
-    [Test]
-    public void Put_ShouldHaveHttpPutAttribute()
-    {
-        // Arrange
-        var methodInfo = typeof(BreakPlaceholdersController)
-            .GetMethod("Put", BindingFlags.Public | BindingFlags.Instance);
-
-        // Act
-        var httpPutAttribute = methodInfo?.GetCustomAttribute<HttpPutAttribute>();
-
-        // Assert
-        httpPutAttribute.ShouldNotBeNull();
-    }
-
-    [Test]
-    public void Delete_ShouldHaveHttpDeleteAttribute()
-    {
-        // Arrange
-        var methodInfo = typeof(BreakPlaceholdersController)
-            .GetMethod("Delete", BindingFlags.Public | BindingFlags.Instance);
-
-        // Act
-        var httpDeleteAttribute = methodInfo?.GetCustomAttribute<HttpDeleteAttribute>();
-
-        // Assert
-        httpDeleteAttribute.ShouldNotBeNull();
-    }
-
-    [Test]
-    public void BreakPlaceholdersController_ShouldInheritFromInputBaseController()
-    {
-        // Arrange & Act
-        var baseType = typeof(BreakPlaceholdersController).BaseType;
-
-        // Assert
-        baseType.ShouldNotBeNull();
-        baseType!.Name.ShouldBe("InputBaseController`1",
-            "BreakPlaceholdersController should inherit from InputBaseController");
-    }
-
-    [Test]
-    public void GetClientList_ShouldNotHaveRoleBasedAuthorization()
-    {
-        // Arrange
-        var methodInfo = typeof(BreakPlaceholdersController)
-            .GetMethod("GetClientList", BindingFlags.Public | BindingFlags.Instance);
-
-        // Act
-        var authorizeAttribute = methodInfo?.GetCustomAttribute<AuthorizeAttribute>();
-
-        // Assert
-        if (authorizeAttribute != null)
-        {
-            authorizeAttribute.Roles.ShouldBeNullOrEmpty(
-                "GetClientList should only require JWT authentication, not specific roles");
-        }
+        typeof(BreakPlaceholdersController).BaseType.ShouldBe(
+            typeof(BaseController),
+            "Deriving from InputBaseController would re-impose its [Authorize(Roles = Admin,Authorised)] " +
+            "on Post/Put/Delete through attribute inheritance, which no override can lift.");
     }
 }

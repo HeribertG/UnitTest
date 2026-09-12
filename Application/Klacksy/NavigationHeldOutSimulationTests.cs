@@ -90,6 +90,9 @@ public class NavigationHeldOutSimulationTests
         var scope = Substitute.For<IServiceScope>();
         var provider = Substitute.For<IServiceProvider>();
         provider.GetService(typeof(INavigationTargetSynonymRepository)).Returns(synonymRepo);
+        var featureAvailability = Substitute.For<IFeatureAvailabilityService>();
+        featureAvailability.IsAvailableAsync(Arg.Any<string>(), Arg.Any<CancellationToken>()).Returns(true);
+        provider.GetService(typeof(IFeatureAvailabilityService)).Returns(featureAvailability);
         scope.ServiceProvider.Returns(provider);
         var scopeFactory = Substitute.For<IServiceScopeFactory>();
         scopeFactory.CreateScope().Returns(scope);

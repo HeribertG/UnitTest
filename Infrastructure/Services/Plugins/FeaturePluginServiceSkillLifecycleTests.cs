@@ -33,7 +33,7 @@ public class FeaturePluginServiceSkillLifecycleTests
 {
     private const string PluginName = "messaging";
     private const string NavigateToSkillName = "navigate_to";
-    private const string PluginRoute = "/messaging";
+    private const string PluginRoute = "/workplace/messaging";
     private const string PluginSkillName = "send_message";
 
     private ISettingsRepository _settingsRepository = null!;

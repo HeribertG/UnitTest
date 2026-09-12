@@ -23,6 +23,17 @@ internal static class WorksTestHelpers
         httpContextAccessor.HttpContext.Returns(httpContext);
     }
 
+    public static void GivenUserIsAdmin(IHttpContextAccessor httpContextAccessor, string userName)
+    {
+        var httpContext = new DefaultHttpContext();
+        httpContext.User = new ClaimsPrincipal(new ClaimsIdentity(
+            [
+                new Claim(ClaimTypes.Role, Roles.Admin),
+                new Claim(ClaimTypes.NameIdentifier, userName)
+            ], "TestAuth"));
+        httpContextAccessor.HttpContext.Returns(httpContext);
+    }
+
     public static void GivenUserIsRegularUser(IHttpContextAccessor httpContextAccessor, string userName)
     {
         var httpContext = new DefaultHttpContext();

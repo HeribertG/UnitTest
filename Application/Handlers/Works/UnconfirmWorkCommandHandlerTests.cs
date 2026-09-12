@@ -1,10 +1,14 @@
 // Copyright (c) Heribert Gasparoli Private. All rights reserved.
 
 /// <summary>
-/// Unit tests for UnconfirmWorkCommandHandler: authorised-role permission resolution against the real lock-level matrix.
+/// Unit tests for UnconfirmWorkCommandHandler: authorised-role permission resolution against the real
+/// lock-level matrix, and the split between the two refusals — a missing role is a rights problem
+/// (ForbiddenException, 403), an entry that carries no lock is a state conflict (InvalidRequestException,
+/// 400). Both used to come out as 400.
 /// </summary>
 
 using Klacks.Api.Application.Commands.Works;
+using Klacks.Api.Application.Exceptions;
 using Klacks.Api.Application.Handlers.Works;
 using Klacks.Api.Application.Mappers;
 using Klacks.Api.Domain.Exceptions;
@@ -61,7 +65,7 @@ public class UnconfirmWorkCommandHandlerTests
     }
 
     [Test]
-    public async Task Handle_ThrowsInvalidRequest_WhenRegularUserUnsealsApprovedWork()
+    public async Task Handle_ThrowsForbidden_WhenRegularUserUnsealsApprovedWork()
     {
         var work = new Work
         {
@@ -73,8 +77,27 @@ public class UnconfirmWorkCommandHandlerTests
 
         Func<Task> act = async () => await _handler.Handle(new UnconfirmWorkCommand(work.Id), CancellationToken.None);
 
-        (await Should.ThrowAsync<InvalidRequestException>(act)).Message.ShouldContain("unsealed");
+        await Should.ThrowAsync<ForbiddenException>(act);
 
         work.LockLevel.ShouldBe(WorkLockLevel.Approved);
+        await _unitOfWork.DidNotReceive().CompleteAsync();
+    }
+
+    [Test]
+    public async Task Handle_ThrowsInvalidRequest_WhenTheEntryCarriesNoLockAtAll()
+    {
+        var work = new Work
+        {
+            Id = Guid.NewGuid(),
+            LockLevel = WorkLockLevel.None
+        };
+        _workRepository.Get(work.Id).Returns(work);
+        WorksTestHelpers.GivenUserIsAdmin(_httpContextAccessor, "admin-user");
+
+        Func<Task> act = async () => await _handler.Handle(new UnconfirmWorkCommand(work.Id), CancellationToken.None);
+
+        await Should.ThrowAsync<InvalidRequestException>(act);
+
+        await _unitOfWork.DidNotReceive().CompleteAsync();
     }
 }

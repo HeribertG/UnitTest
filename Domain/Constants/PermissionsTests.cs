@@ -8,6 +8,7 @@
 /// every assistant entry point now shares.
 /// </summary>
 
+using System.Reflection;
 using Klacks.Api.Domain.Constants;
 using Shouldly;
 
@@ -97,9 +98,100 @@ public class PermissionsTests
     }
 
     [Test]
-    public void ExpandRoles_NoRoles_YieldsNothing()
+    public void ExpandRoles_NoRoles_YieldsThePlannerFloor()
     {
-        Permissions.ExpandRoles(Array.Empty<string>()).ShouldBeEmpty();
+        var rights = Permissions.ExpandRoles(Array.Empty<string>());
+
+        rights.ShouldBe(Permissions.PlannerFloor.ToList(), ignoreOrder: true);
+    }
+
+    [Test]
+    public void ExpandRoles_NoRoles_CarriesNoRoleName()
+    {
+        var rights = Permissions.ExpandRoles(Array.Empty<string>());
+
+        rights.ShouldNotContain(Roles.Admin);
+        rights.ShouldNotContain(Roles.Authorised);
+        rights.ShouldNotContain(Roles.User);
+    }
+
+    [Test]
+    public void ExpandRoles_BlankRoleNames_AreIgnoredAndStillYieldTheFloor()
+    {
+        var rights = Permissions.ExpandRoles(new[] { string.Empty, "   " });
+
+        rights.ShouldBe(Permissions.PlannerFloor.ToList(), ignoreOrder: true);
+    }
+
+    [Test]
+    public void ExpandRoles_NoRoles_MayWriteScheduleWorkAbsencesAndNotes()
+    {
+        var rights = Permissions.ExpandRoles(Array.Empty<string>());
+
+        rights.ShouldContain(Permissions.CanEditSchedule);
+        rights.ShouldContain(Permissions.CanPlan);
+        rights.ShouldContain(Permissions.CanEditClientNotes);
+        rights.ShouldContain(Permissions.CanUseAssistant);
+    }
+
+    [Test]
+    public void ExpandRoles_NoRoles_GrantsNoSettingsAndNoDeletes()
+    {
+        var rights = Permissions.ExpandRoles(Array.Empty<string>());
+
+        rights.ShouldNotContain(Permissions.CanViewSettings);
+        rights.ShouldNotContain(Permissions.CanEditSettings);
+        rights.ShouldNotContain(Permissions.CanEditClients);
+        rights.ShouldNotContain(Permissions.CanDeleteClients);
+    }
+
+    [Test]
+    public void ExpandRoles_UnknownRole_YieldsTheSameFloorAsNoRoleAtAll()
+    {
+        var rights = Permissions.ExpandRoles(new[] { "SomeFutureRole" });
+
+        rights.ShouldContain("SomeFutureRole");
+        foreach (var permission in Permissions.PlannerFloor)
+        {
+            rights.ShouldContain(permission);
+        }
+    }
+
+    [Test]
+    public void Authorised_HoldsTheClientNotePermission()
+    {
+        Permissions.GetPermissionsForRole(Roles.Authorised).ShouldContain(Permissions.CanEditClientNotes);
+    }
+
+    [Test]
+    public void Admin_HoldsEveryDeclaredPermissionIncludingClientNotes()
+    {
+        var adminPermissions = Permissions.GetPermissionsForRole(Roles.Admin);
+        var declared = typeof(Permissions)
+            .GetFields(BindingFlags.Public | BindingFlags.Static)
+            .Where(f => f.IsLiteral && !f.IsInitOnly && f.FieldType == typeof(string))
+            .Select(f => (string)f.GetRawConstantValue()!)
+            .ToList();
+
+        declared.ShouldContain(Permissions.CanEditClientNotes);
+        foreach (var permission in declared)
+        {
+            adminPermissions.ShouldContain(permission);
+        }
+    }
+
+    [Test]
+    public void PlannerFloor_IsASubsetOfTheAuthorisedPermissions()
+    {
+        var authorised = Permissions.GetPermissionsForRole(Roles.Authorised);
+
+        foreach (var permission in Permissions.PlannerFloor)
+        {
+            authorised.ShouldContain(
+                permission,
+                "A Supervisor must never hold fewer rights than a role-less Planer — the MCP ceiling " +
+                "and the skill gates are both expressed against the Authorised permission set.");
+        }
     }
 
     [TestCase(Roles.Admin)]
@@ -111,12 +203,14 @@ public class PermissionsTests
     }
 
     [Test]
-    public void GetPermissionsForRole_UnknownRole_FallsBackToTheReadOnlyFloorWithTheAssistant()
+    public void GetPermissionsForRole_UnknownRole_FallsBackToThePlannerFloor()
     {
         var rights = Permissions.GetPermissionsForRole("SomeFutureRole");
 
+        rights.ShouldBe(Permissions.PlannerFloor.ToList(), ignoreOrder: true);
         rights.ShouldContain(Permissions.CanUseAssistant);
         rights.ShouldContain(Permissions.CanViewClients);
+        rights.ShouldContain(Permissions.CanEditClientNotes);
         rights.ShouldNotContain(Permissions.CanEditClients);
     }
 }

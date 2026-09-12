@@ -1,8 +1,8 @@
 // Copyright (c) Heribert Gasparoli Private. All rights reserved.
 
 /// <summary>
-/// Tests for the browser-reported navigation outcome handler: only the three
-/// browser-observable outcomes (Scrolled/TargetMiss/PermissionDenied) are accepted -
+/// Tests for the browser-reported navigation outcome handler: only the four browser-observable
+/// outcomes (Scrolled/TargetMiss/PermissionDenied/FeatureDisabled) are accepted -
 /// suspected-miss is server-detected and never a valid client report. A missing UserId or an
 /// unknown outcome is a bad request; a valid report is forwarded to INavigationFeedbackLogger
 /// with the utterance truncated to NavigationFeedbackLimits.MaxUtteranceLength.
@@ -146,5 +146,37 @@ public class ReportNavigationOutcomeCommandHandlerTests
 
         await _logger.Received(1).LogOutcomeAsync(
             Arg.Any<string?>(), Locale, TargetId, NavigationOutcomeKinds.PermissionDenied, Route, Arg.Any<Guid?>(), Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task Handle_accepts_feature_disabled_outcome()
+    {
+        var command = Command(NavigationOutcomeKinds.FeatureDisabled);
+
+        Func<Task> act = () => _handler.Handle(command, CancellationToken.None);
+
+        await act.ShouldNotThrowAsync();
+    }
+
+    [Test]
+    public async Task Handle_records_feature_disabled_outcome()
+    {
+        var command = Command(NavigationOutcomeKinds.FeatureDisabled);
+
+        await _handler.Handle(command, CancellationToken.None);
+
+        await _logger.Received(1).LogOutcomeAsync(
+            Arg.Any<string?>(), Locale, TargetId, NavigationOutcomeKinds.FeatureDisabled, Route, Arg.Any<Guid?>(), Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task Handle_keeps_feature_disabled_apart_from_permission_denied()
+    {
+        var command = Command(NavigationOutcomeKinds.FeatureDisabled);
+
+        await _handler.Handle(command, CancellationToken.None);
+
+        await _logger.DidNotReceive().LogOutcomeAsync(
+            Arg.Any<string?>(), Arg.Any<string>(), Arg.Any<string?>(), NavigationOutcomeKinds.PermissionDenied, Arg.Any<string>(), Arg.Any<Guid?>(), Arg.Any<CancellationToken>());
     }
 }

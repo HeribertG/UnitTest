@@ -6,6 +6,7 @@ using Shouldly;
 using Klacks.Api.Application.Klacksy;
 using Klacks.Api.Application.Interfaces.Klacksy;
 using Klacks.Api.Application.Klacksy.Models;
+using Klacks.Api.Domain.Constants;
 using NSubstitute;
 using NUnit.Framework;
 
@@ -107,13 +108,50 @@ public class NavigationTargetMatcherTests
     [Test]
     public void Match_skips_permission_gated_target_when_user_lacks_right()
     {
-        var target = new NavigationTarget { TargetId = "admin-only", Route = "/settings", LabelKey = "x", RequiredPermission = "Admin" };
+        var target = new NavigationTarget { TargetId = "admin-only", Route = "/settings", LabelKey = "x", RequiredPermission = Roles.Admin };
         _cache.FindBySynonym("admin", "de").Returns(new[] { target });
 
         var result = _sut.Match("admin", "de", Array.Empty<string>());
 
         result.TargetId.ShouldBeNull();
         result.Candidates.ShouldBeEmpty();
+    }
+
+    [Test]
+    public void Match_allows_permission_gated_target_for_admin_via_the_shared_permission_helper()
+    {
+        var target = new NavigationTarget
+        {
+            TargetId = "admin-only",
+            Route = "/settings",
+            LabelKey = "x",
+            RequiredPermission = Permissions.CanEditSettings
+        };
+        _cache.FindBySynonym("admin", "de").Returns(new[] { target });
+
+        var result = _sut.Match("admin", "de", new[] { Roles.Admin });
+
+        result.TargetId.ShouldBe("admin-only");
+        result.Tier.ShouldBe(NavigationMatchTier.Exact);
+    }
+
+    [Test]
+    public void Match_requires_every_element_of_a_comma_separated_permission_list()
+    {
+        var target = new NavigationTarget
+        {
+            TargetId = "double-gated",
+            Route = "/settings",
+            LabelKey = "x",
+            RequiredPermission = $"{Permissions.CanViewSettings}, {Permissions.CanEditSettings}"
+        };
+        _cache.FindBySynonym("gated", "de").Returns(new[] { target });
+
+        var partial = _sut.Match("gated", "de", new[] { Permissions.CanViewSettings });
+        var complete = _sut.Match("gated", "de", new[] { Permissions.CanViewSettings, Permissions.CanEditSettings });
+
+        partial.TargetId.ShouldBeNull();
+        complete.TargetId.ShouldBe("double-gated");
     }
 
     [Test]

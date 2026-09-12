@@ -10,6 +10,8 @@
 /// </summary>
 
 using Klacks.Api.Application.Commands.Settings.Settings;
+using Klacks.Api.Application.Interfaces.Klacksy;
+using InboxSettingKeys = Klacks.Api.Application.Constants.InboxAvailabilitySettingKeys;
 using Klacks.Api.Domain.Constants;
 using Klacks.Api.Domain.Events;
 using Klacks.Api.Domain.Exceptions;
@@ -27,6 +29,7 @@ public class PutCommandHandlerTests
     private ISettingsEncryptionService _encryptionService = null!;
     private IUnitOfWork _unitOfWork = null!;
     private IDomainEventDispatcher _eventDispatcher = null!;
+    private INavigationTargetCacheService _navigationTargetCache = null!;
     private SettingHandlers.PutCommandHandler _sut = null!;
 
     [SetUp]
@@ -41,6 +44,7 @@ public class PutCommandHandlerTests
             .Returns(ci => ci.ArgAt<string>(1));
         _unitOfWork = Substitute.For<IUnitOfWork>();
         _eventDispatcher = Substitute.For<IDomainEventDispatcher>();
+        _navigationTargetCache = Substitute.For<INavigationTargetCacheService>();
 
         _sut = new SettingHandlers.PutCommandHandler(
             _settingsRepository,
@@ -48,12 +52,35 @@ public class PutCommandHandlerTests
             _unitOfWork,
             _eventDispatcher,
             new SettingValueValidator(),
+            _navigationTargetCache,
             NullLogger<SettingHandlers.PutCommandHandler>.Instance);
     }
 
     private static SettingsEntity BuildSetting(string type, string value)
         => new() { Id = Guid.NewGuid(), Type = type, Value = value };
 
+    // The inbox page exists only where an incoming mail server is configured, and the chat fast-path
+    // answers from a snapshot - so a write to one of those keys has to mark that snapshot stale or the
+    // page stays offered (or stays hidden) for up to the cache TTL.
+    [Test]
+    public async Task Handle_IncomingServerKey_InvalidatesTheNavigationTargetSnapshot()
+    {
+        await _sut.Handle(
+            new PutCommand(BuildSetting(InboxSettingKeys.All[0], "imap.example.com")),
+            CancellationToken.None);
+
+        _navigationTargetCache.Received(1).Invalidate();
+    }
+
+    [Test]
+    public async Task Handle_UnrelatedKey_DoesNotInvalidateTheNavigationTargetSnapshot()
+    {
+        await _sut.Handle(
+            new PutCommand(BuildSetting(SettingKeys.DefaultLanguage, "fr")),
+            CancellationToken.None);
+
+        _navigationTargetCache.DidNotReceive().Invalidate();
+    }
     [Test]
     public async Task Handle_RelevantKeyWithChangedValue_DispatchesSurchargeSettingsChangedEvent()
     {

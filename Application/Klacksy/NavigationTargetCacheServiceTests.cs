@@ -14,11 +14,19 @@ using NUnit.Framework;
 [TestFixture]
 public class NavigationTargetCacheServiceTests
 {
-    private static IServiceScopeFactory BuildScopeFactory(INavigationTargetSynonymRepository repo)
+    private static IServiceScopeFactory BuildScopeFactory(
+        INavigationTargetSynonymRepository repo, IFeatureAvailabilityService? featureAvailability = null)
     {
+        var availability = featureAvailability ?? Substitute.For<IFeatureAvailabilityService>();
+        if (featureAvailability == null)
+        {
+            availability.IsAvailableAsync(Arg.Any<string>(), Arg.Any<CancellationToken>()).Returns(true);
+        }
+
         var scope = Substitute.For<IServiceScope>();
         var provider = Substitute.For<IServiceProvider>();
         provider.GetService(typeof(INavigationTargetSynonymRepository)).Returns(repo);
+        provider.GetService(typeof(IFeatureAvailabilityService)).Returns(availability);
         scope.ServiceProvider.Returns(provider);
         var factory = Substitute.For<IServiceScopeFactory>();
         factory.CreateScope().Returns(scope);
@@ -168,6 +176,76 @@ public class NavigationTargetCacheServiceTests
         await sut.WarmUpAsync();
 
         sut.FindBySynonym("uploadfläche", "de").Count.ShouldBe(1);
+    }
+
+    // The matcher behind the chat fast-path does not ask a second time, so a feature-gated target that
+    // survives into the snapshot is a navigation the Angular guard then bounces to /no-access.
+    [Test]
+    public void Targets_of_an_unavailable_feature_are_dropped_from_the_snapshot()
+    {
+        var sut = new NavigationTargetCacheService(
+            WriteFeatureGatedManifest(), BuildScopeFactory(EmptySynonymRepo(), AvailabilityOf(messaging: false)));
+
+        sut.GetById("messaging").ShouldBeNull();
+        sut.GetByRoute("/workplace/messaging").ShouldBeEmpty();
+        sut.FindBySynonym("nachrichten", "de").ShouldBeEmpty();
+        sut.GetById("dashboard").ShouldNotBeNull();
+    }
+
+    [Test]
+    public void Targets_of_an_available_feature_stay_in_the_snapshot()
+    {
+        var sut = new NavigationTargetCacheService(
+            WriteFeatureGatedManifest(), BuildScopeFactory(EmptySynonymRepo(), AvailabilityOf(messaging: true)));
+
+        sut.GetById("messaging").ShouldNotBeNull();
+        sut.GetByRoute("/workplace/messaging").Select(t => t.TargetId).ShouldBe(new[] { "messaging" });
+        sut.FindBySynonym("nachrichten", "de").Select(t => t.TargetId).ShouldBe(new[] { "messaging" });
+        sut.GetById("dashboard").ShouldNotBeNull();
+    }
+
+    [Test]
+    public void Feature_availability_is_asked_once_per_distinct_feature_per_reload()
+    {
+        var availability = AvailabilityOf(messaging: true);
+        var sut = new NavigationTargetCacheService(
+            WriteFeatureGatedManifest(), BuildScopeFactory(EmptySynonymRepo(), availability));
+
+        sut.GetById("dashboard").ShouldNotBeNull();
+
+        availability.Received(1).IsAvailableAsync("messaging", Arg.Any<CancellationToken>());
+    }
+
+    private static IFeatureAvailabilityService AvailabilityOf(bool messaging)
+    {
+        var availability = Substitute.For<IFeatureAvailabilityService>();
+        availability.IsAvailableAsync(Arg.Any<string>(), Arg.Any<CancellationToken>()).Returns(false);
+        availability.IsAvailableAsync("messaging", Arg.Any<CancellationToken>()).Returns(messaging);
+        return availability;
+    }
+
+    private static INavigationTargetSynonymRepository EmptySynonymRepo()
+    {
+        var repo = Substitute.For<INavigationTargetSynonymRepository>();
+        repo.GetAllAsync(Arg.Any<CancellationToken>()).Returns(new List<NavigationTargetSynonym>
+        {
+            new() { TargetId = "messaging", Language = "de", Keyword = "nachrichten" }
+        });
+        return repo;
+    }
+
+    private static string WriteFeatureGatedManifest()
+    {
+        var tempFile = Path.GetTempFileName();
+        File.WriteAllText(tempFile, """
+        [
+          {"targetId":"messaging","route":"/workplace/messaging","labelKey":"nav.messaging",
+           "category":"page","requiredFeature":"messaging","synonyms":{}},
+          {"targetId":"dashboard","route":"/workplace/dashboard","labelKey":"nav.dashboard",
+           "category":"page","synonyms":{}}
+        ]
+        """);
+        return tempFile;
     }
 
     private static async Task<IReadOnlyList<NavigationTargetSynonym>> LoadAfterYieldAsync()

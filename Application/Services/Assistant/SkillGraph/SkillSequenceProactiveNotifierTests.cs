@@ -54,6 +54,29 @@ public class SkillSequenceProactiveNotifierTests
     }
 
     [Test]
+    public async Task Notify_WithVeryLongSkillDescriptions_KeepsTheSuggestionInsideTheDispatchColumnLimits()
+    {
+        const string suggestedAction = "Send an email";
+        var (sut, trigger) = Build(
+            new List<SkillRelation> { Seq("aa", "bb", 0.85) },
+            new List<AgentSkill>
+            {
+                Skill("aa", new string('f', 995)),
+                Skill("bb", suggestedAction + new string('t', 982)),
+            });
+        IAgentTriggerEvent? captured = null;
+        trigger.When(t => t.OnEventAsync(Arg.Any<IAgentTriggerEvent>(), Arg.Any<CancellationToken>()))
+            .Do(ci => captured = ci.Arg<IAgentTriggerEvent>());
+
+        await sut.NotifyAfterSkillAsync("aa", Guid.NewGuid());
+
+        captured.ShouldNotBeNull();
+        captured!.Summary.Length.ShouldBeLessThanOrEqualTo(ProactiveTriggerDispatchLimits.ContentKeyMaxLength);
+        captured.DedupKey.Length.ShouldBeLessThanOrEqualTo(ProactiveTriggerDispatchLimits.DedupKeyMaxLength);
+        captured.Summary.ShouldContain(suggestedAction);
+    }
+
+    [Test]
     public async Task Notify_WithoutSuccessor_RaisesNothing()
     {
         var (sut, trigger) = Build(new List<SkillRelation>(), new List<AgentSkill> { Skill("aa", "Add a note") });

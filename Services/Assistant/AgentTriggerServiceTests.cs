@@ -8,8 +8,12 @@
 /// rate-limit gates block before anything is persisted, that rows are persisted before the live
 /// push so a failed push keeps the message reachable via the inbox, and that overlong summary
 /// param values are capped so the persisted JSON never exceeds the database column limit.
+/// The same cap applies to the content and dedup keys — without it an event whose summary exceeds
+/// the column width aborts the insert instead of shortening the value, and the notification is lost
+/// — the cut never splits a surrogate pair, and a lost row is reported as an error.
 /// </summary>
 
+using System.Text;
 using System.Text.Json;
 using Klacks.Api.Application.Services.Assistant.Triggers;
 using Klacks.Api.Domain.Constants;
@@ -1119,6 +1123,70 @@ public class AgentTriggerServiceTests
         Assert.That(recordedRow, Is.Not.Null);
         Assert.That(recordedRow!.NextReminderAtUtc, Is.EqualTo(distantPast.AddHours(1)),
             "The due date must be stamped from the injected TimeProvider, never from DateTime.UtcNow.");
+    }
+
+    [Test]
+    public async Task OnEventAsync_OverlongSummary_CapsContentKeyAndDedupKeyToTheColumnLimits()
+    {
+        _notificationService.GetConnectedUserIdsAsync().Returns(new[] { "user-a" });
+        _rateLimiter.ShouldFire(Arg.Any<string>(), Arg.Any<string>()).Returns(true);
+        ProactiveTriggerDispatchRow? recordedRow = null;
+        _dispatchRepository
+            .When(r => r.RecordAsync(Arg.Any<ProactiveTriggerDispatchRow>(), Arg.Any<CancellationToken>()))
+            .Do(ci => recordedRow = ci.ArgAt<ProactiveTriggerDispatchRow>(0));
+        var overlongSummary = new string('x', 2050);
+
+        await _sut.OnEventAsync(new PlainBroadcastEvent(AgentTriggerSeverity.Low, overlongSummary));
+
+        Assert.That(recordedRow, Is.Not.Null);
+        Assert.Multiple(() =>
+        {
+            Assert.That(recordedRow!.ContentKey, Has.Length.EqualTo(ProactiveTriggerDispatchLimits.ContentKeyMaxLength));
+            Assert.That(recordedRow.ContentKey, Does.EndWith(ProactiveTriggerDispatchLimits.TruncationSuffix));
+            Assert.That(recordedRow.DedupKey, Has.Length.EqualTo(ProactiveTriggerDispatchLimits.DedupKeyMaxLength));
+        });
+    }
+
+    [Test]
+    public async Task OnEventAsync_SummaryCutInsideASurrogatePair_KeepsTheStoredTextValidUtf8()
+    {
+        _notificationService.GetConnectedUserIdsAsync().Returns(new[] { "user-a" });
+        _rateLimiter.ShouldFire(Arg.Any<string>(), Arg.Any<string>()).Returns(true);
+        ProactiveTriggerDispatchRow? recordedRow = null;
+        _dispatchRepository
+            .When(r => r.RecordAsync(Arg.Any<ProactiveTriggerDispatchRow>(), Arg.Any<CancellationToken>()))
+            .Do(ci => recordedRow = ci.ArgAt<ProactiveTriggerDispatchRow>(0));
+        var emojiSummary = string.Concat(Enumerable.Repeat("\U0001F600", 400));
+
+        await _sut.OnEventAsync(new PlainBroadcastEvent(AgentTriggerSeverity.Low, emojiSummary));
+
+        Assert.That(recordedRow, Is.Not.Null);
+        var contentKey = recordedRow!.ContentKey!;
+        Assert.That(contentKey, Has.Length.LessThanOrEqualTo(ProactiveTriggerDispatchLimits.ContentKeyMaxLength));
+        Assert.That(Encoding.UTF8.GetString(Encoding.UTF8.GetBytes(contentKey)), Is.EqualTo(contentKey),
+            "Cutting a surrogate pair in half leaves a lone surrogate that cannot round-trip through UTF-8.");
+    }
+
+    [Test]
+    public async Task OnEventAsync_PersistenceFails_LogsAnErrorAndReportsTheFailureInTheSummaryLine()
+    {
+        _notificationService.GetConnectedUserIdsAsync().Returns(new[] { "user-a" });
+        _rateLimiter.ShouldFire(Arg.Any<string>(), Arg.Any<string>()).Returns(true);
+        _dispatchRepository
+            .RecordAsync(Arg.Any<ProactiveTriggerDispatchRow>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromException(new InvalidOperationException("column overflow")));
+
+        await _sut.OnEventAsync(new PlainBroadcastEvent(AgentTriggerSeverity.Low, "Plain summary."));
+
+        var errors = _logger.Entries.Where(e => e.Level == LogLevel.Error).ToList();
+        Assert.That(errors, Has.Count.EqualTo(1),
+            "A lost notification is not a warning: nothing else keeps the message reachable.");
+        Assert.That(errors[0].Message, Does.Contain("persistence failed"));
+        Assert.That(
+            _logger.Entries.Any(e => e.Level == LogLevel.Information
+                && e.Message.Contains("1 failed", StringComparison.Ordinal)),
+            Is.True,
+            "The per-event summary line must account for the recipients that lost their row.");
     }
 }
 

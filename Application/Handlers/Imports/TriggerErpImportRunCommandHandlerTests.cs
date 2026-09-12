@@ -25,7 +25,7 @@ public class TriggerErpImportRunCommandHandlerTests
     }
 
     [Test]
-    public async Task Handle_NoExistingSetting_AddsNextRunSettingAtUtcNow()
+    public async Task Handle_NoExistingSetting_AddsNextRunSettingAfterWriteStabilityWindow()
     {
         _settingsRepository.GetSetting(ErpImportSettingsTypes.NextRunUtc).Returns((Klacks.Api.Domain.Models.Settings.Settings?)null);
         Klacks.Api.Domain.Models.Settings.Settings? added = null;
@@ -41,7 +41,7 @@ public class TriggerErpImportRunCommandHandlerTests
         added.Id.ShouldNotBe(Guid.Empty);
         var parsed = ParseRoundtripUtc(added.Value);
         parsed.Kind.ShouldBe(DateTimeKind.Utc);
-        parsed.ShouldBeInRange(before, after);
+        parsed.ShouldBeInRange(before + ErpImportStorageTiming.WriteStabilityWindow, after + ErpImportStorageTiming.WriteStabilityWindow);
         await _settingsRepository.DidNotReceive().PutSetting(Arg.Any<Klacks.Api.Domain.Models.Settings.Settings>());
         await _unitOfWork.Received(1).CompleteAsync();
     }
@@ -65,7 +65,7 @@ public class TriggerErpImportRunCommandHandlerTests
         await _settingsRepository.DidNotReceive().AddSetting(Arg.Any<Klacks.Api.Domain.Models.Settings.Settings>());
         var parsed = ParseRoundtripUtc(existing.Value);
         parsed.Kind.ShouldBe(DateTimeKind.Utc);
-        parsed.ShouldBeInRange(before, after);
+        parsed.ShouldBeInRange(before + ErpImportStorageTiming.WriteStabilityWindow, after + ErpImportStorageTiming.WriteStabilityWindow);
         await _unitOfWork.Received(1).CompleteAsync();
     }
 
@@ -86,6 +86,26 @@ public class TriggerErpImportRunCommandHandlerTests
         var nextTick = parsed.Add(BackgroundTickInterval);
         var decision = new ScheduledTaskDuePolicy().Decide(parsed, nextTick, RunnerCatchUpWindow);
         decision.ShouldBe(ScheduledTaskRunDecision.Fire);
+    }
+
+    [Test]
+    public async Task Handle_TickInsideWriteStabilityWindow_DoesNotFireBeforeUploadedFileIsStable()
+    {
+        var existing = new Klacks.Api.Domain.Models.Settings.Settings
+        {
+            Id = Guid.NewGuid(),
+            Type = ErpImportSettingsTypes.NextRunUtc,
+            Value = string.Empty
+        };
+        _settingsRepository.GetSetting(ErpImportSettingsTypes.NextRunUtc).Returns(existing);
+
+        var uploadedAtUtc = DateTime.UtcNow;
+        await _handler.Handle(new TriggerErpImportRunCommand(), CancellationToken.None);
+
+        var parsed = ParseRoundtripUtc(existing.Value);
+        var tickInsideWindow = uploadedAtUtc + ErpImportStorageTiming.WriteStabilityWindow - TimeSpan.FromMilliseconds(1);
+        var decision = new ScheduledTaskDuePolicy().Decide(parsed, tickInsideWindow, RunnerCatchUpWindow);
+        decision.ShouldBe(ScheduledTaskRunDecision.NotDue);
     }
 
     private static DateTime ParseRoundtripUtc(string value)

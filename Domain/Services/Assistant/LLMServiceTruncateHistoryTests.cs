@@ -98,7 +98,7 @@ public class LLMServiceTruncateHistoryTests
 
         result.Count.ShouldBe(21);
         result[0].Role.ShouldBe("system");
-        result[0].Content.ShouldContain("Showing last 20 of 25 messages");
+        result[0].Content.ShouldBe(LLMService.TruncationNotice);
         result[^1].Content.ShouldBe("message-24");
     }
 
@@ -117,7 +117,7 @@ public class LLMServiceTruncateHistoryTests
         var result = LLMService.TruncateHistory(history, 25, null);
 
         result[0].Role.ShouldBe("system");
-        result[0].Content.ShouldContain("Showing last");
+        result[0].Content.ShouldBe(LLMService.TruncationNotice);
         result[^1].Content.ShouldBe("newest-kept");
         result.ShouldNotContain(m => m.Content == new string('a', 40));
     }
@@ -130,7 +130,7 @@ public class LLMServiceTruncateHistoryTests
         var result = LLMService.TruncateHistory(history, LargeBudget, null);
 
         result.Count.ShouldBe(21);
-        result[0].Content.ShouldContain("Showing last 20 of 25 messages");
+        result[0].Content.ShouldBe(LLMService.TruncationNotice);
     }
 
     [Test]
@@ -142,7 +142,7 @@ public class LLMServiceTruncateHistoryTests
 
         result.Count.ShouldBe(9);
         result[0].Role.ShouldBe("system");
-        result[0].Content.ShouldContain("Showing last 8 of 25 messages");
+        result[0].Content.ShouldBe(LLMService.TruncationNotice);
         result[^1].Content.ShouldBe("message-24");
     }
 
@@ -154,6 +154,20 @@ public class LLMServiceTruncateHistoryTests
         var result = LLMService.TruncateHistory(history, LargeBudget, null, maxHistoryMessages: 40);
 
         result.Count.ShouldBe(41);
-        result[0].Content.ShouldContain("Showing last 40 of 45 messages");
+        result[0].Content.ShouldBe(LLMService.TruncationNotice);
+    }
+
+    // The notice sits at position 0 of every truncated history, i.e. inside the prompt prefix that
+    // providers with automatic prefix caching hash. It must therefore be byte-identical no matter how
+    // many messages were dropped — a turn-varying count invalidated the cache on every call.
+    [Test]
+    public void TruncationNotice_IsIdenticalAcrossDifferentTruncationSizes()
+    {
+        var small = LLMService.TruncateHistory(History(25), LargeBudget, null, maxHistoryMessages: 8);
+        var large = LLMService.TruncateHistory(History(45), LargeBudget, null, maxHistoryMessages: 40);
+
+        small[0].Content.ShouldBe(large[0].Content);
+        small[0].Content.ShouldNotContain("8");
+        small[0].Content.ShouldNotContain("25");
     }
 }

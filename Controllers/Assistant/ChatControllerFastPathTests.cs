@@ -384,6 +384,27 @@ public class ChatControllerFastPathTests
         Assert.That(sse, Does.Contain($"\"target\":\"{targetId}\""));
     }
 
+    // The progress event goes out before the navigation match and its feedback log (a DB write), not
+    // after them - that ordering is the whole point of sending it from the controller.
+    [Test]
+    public async Task Stream_SendsTheFirstStatusEvent_BeforeAnythingElse()
+    {
+        var body = new MemoryStream();
+        _controller.ControllerContext.HttpContext.Response.Body = body;
+
+        var request = new LLMRequest { Message = "Mitarbeiter", ConversationId = null };
+
+        await _controller.ProcessMessageStream(request, CancellationToken.None);
+
+        body.Position = 0;
+        var sse = new StreamReader(body).ReadToEnd();
+        Assert.That(sse, Does.StartWith("event: status\ndata: "));
+        Assert.That(sse, Does.Contain("\"stage\":\"assembling_toolset\""));
+        Assert.That(sse.IndexOf("event: metadata", StringComparison.Ordinal),
+            Is.GreaterThan(sse.IndexOf("event: status", StringComparison.Ordinal)),
+            "the fast path must still send its own events after the status event");
+    }
+
     [Test]
     public async Task StreamFastPath_OmitsTargetInMetadata_ForPageLevelCategory()
     {

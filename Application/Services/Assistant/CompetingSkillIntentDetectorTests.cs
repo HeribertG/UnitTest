@@ -1,7 +1,6 @@
 // Copyright (c) Heribert Gasparoli Private. All rights reserved.
 
 using Klacks.Api.Application.Services.Assistant;
-using Klacks.Api.Domain.Interfaces.Assistant;
 using Klacks.Api.Domain.Models.Assistant;
 using Klacks.Api.Domain.Models.Assistant.Recipes;
 
@@ -121,12 +120,12 @@ public class CompetingSkillIntentDetectorTests
     }
 
     [Test]
-    public async Task FindCompetingSkillNamesAsync_LoadsEnabledSkillsFromRepository()
+    public async Task FindCompetingSkillNamesAsync_LoadsEnabledSkillsFromCache()
     {
-        var repository = Substitute.For<IAgentSkillRepository>();
-        repository.GetAllEnabledAsync(Arg.Any<CancellationToken>())
-            .Returns(new List<AgentSkill> { Skill(CompanyRuleSkill, "neue firmenregel") });
-        var detector = new CompetingSkillIntentDetector(repository);
+        var skillCache = Substitute.For<ISkillCacheService>();
+        skillCache.GetAllEnabledSkillsAsync(Arg.Any<CancellationToken>())
+            .Returns((IReadOnlyList<AgentSkill>)new List<AgentSkill> { Skill(CompanyRuleSkill, "neue firmenregel") });
+        var detector = new CompetingSkillIntentDetector(skillCache);
 
         var competing = await detector.FindCompetingSkillNamesAsync(
             BugMessage, "de", CreateShiftOrderLikeTrigger, null, []);

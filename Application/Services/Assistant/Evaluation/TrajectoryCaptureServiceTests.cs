@@ -483,13 +483,16 @@ public class TrajectoryCaptureServiceTests
             "Bitte.",
             []);
 
-        captured!.LatencyMsTotal.ShouldBe(1200);
+        captured!.LatencyMsTotal.ShouldBe(1350);
         captured.LatencyMsKnowledge.ShouldBe(150);
         captured.LatencyMsLlm.ShouldBe(800);
     }
 
+    // Without a TTFT the fallback is the full ResponseTimeMs, NOT ResponseTimeMs minus the assembly:
+    // the assembly runs before the response stopwatch starts, so the two intervals are disjoint and
+    // subtracting one from the other under-reported the model latency by the assembly duration.
     [Test]
-    public async Task LlmUsageWithoutTtft_FallsBackToRemainderForLlmLatency()
+    public async Task LlmUsageWithoutTtft_FallsBackToFullResponseTimeForLlmLatency()
     {
         SkillSelectionTrajectory? captured = null;
         await _repository.AddAsync(Arg.Do<SkillSelectionTrajectory>(r => captured = r));
@@ -507,11 +510,13 @@ public class TrajectoryCaptureServiceTests
             "Bitte.",
             []);
 
-        captured!.LatencyMsTotal.ShouldBe(1200);
+        captured!.LatencyMsTotal.ShouldBe(1350);
         captured.LatencyMsKnowledge.ShouldBe(150);
-        captured.LatencyMsLlm.ShouldBe(1050);
+        captured.LatencyMsLlm.ShouldBe(1200);
     }
 
+    // With no response time to add, the total collapses to the assembly time - never below it, which
+    // is what the old "total = ResponseTimeMs" rule produced (total 0 next to a knowledge part of 95).
     [Test]
     public async Task WithoutLlmUsageRow_KnowledgeLatencyFallsBackToContextValue()
     {
@@ -525,7 +530,7 @@ public class TrajectoryCaptureServiceTests
             []);
 
         captured!.LatencyMsKnowledge.ShouldBe(95);
-        captured.LatencyMsTotal.ShouldBe(0);
+        captured.LatencyMsTotal.ShouldBe(95);
         captured.LatencyMsLlm.ShouldBe(0);
     }
 }
